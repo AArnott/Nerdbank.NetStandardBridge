@@ -166,6 +166,7 @@ public class NetFrameworkAssemblyResolver
     /// <remarks>
     /// The proposed assembly may not have the same name as the one requested in <paramref name="assemblyName"/> due to binding redirects.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">Thrown when an assembly was found but did not match the expected version or public key token.</exception>
     public AssemblyName? GetAssemblyNameByPolicy(AssemblyName assemblyName)
     {
         if (assemblyName is null)
@@ -269,6 +270,7 @@ public class NetFrameworkAssemblyResolver
     /// </param>
     /// <returns>The assembly, if it was loaded.</returns>
     /// <inheritdoc cref="Load(AssemblyName, string)" path="/exception"/>
+    /// <inheritdoc cref="GetAssemblyNameByPolicy(AssemblyName)" path="/exception"/>
     public Assembly? Load(AssemblyName assemblyName)
     {
         try
@@ -301,6 +303,7 @@ public class NetFrameworkAssemblyResolver
     /// </param>
     /// <returns>The assembly, if it was loaded.</returns>
     /// <inheritdoc cref="AppDomain.Load(AssemblyName)" path="/exception"/>
+    /// <inheritdoc cref="GetAssemblyNameByPolicy(AssemblyName)" path="/exception"/>
     public Assembly? Load(AssemblyName assemblyName)
     {
         try
