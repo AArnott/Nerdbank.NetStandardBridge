@@ -2,8 +2,6 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 // Copyright (c) Microsoft Corporation. All rights reserved.
-namespace Nerdbank.NetStandardBridge;
-
 #if NET461 || NETSTANDARD2_0_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 using System.Collections.Immutable;
 using System.Diagnostics;
@@ -12,6 +10,8 @@ using System.Reflection;
 using System.Runtime.Loader;
 #endif
 using System.Xml.Linq;
+
+namespace Nerdbank.NetStandardBridge;
 
 /// <summary>
 /// Emulates .NET Framework assembly load behavior on .NET Core and .NET 5+.
