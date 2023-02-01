@@ -13,8 +13,8 @@
     <PackageVersion Include="System.Memory" Version="4.5.5" />
     <PackageVersion Include="System.ValueTuple" Version="4.5.0" />
     <PackageVersion Include="Validation" Version="2.5.51" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="2.4.1" Condition="'$(TargetFramework)'=='net45'" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="2.4.5" Condition="'$(TargetFramework)'!='net45'" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="2.4.3" Condition="'$(TargetFramework)'=='net45'" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="2.4.3" Condition="'$(TargetFramework)'!='net45'" />
     <PackageVersion Include="xunit" Version="2.4.2" />
   </ItemGroup>
   <ItemGroup>
