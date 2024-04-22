@@ -4,6 +4,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 #if NET462 || NETSTANDARD2_0_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 using System.Collections.Immutable;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Reflection;
 #if NETCOREAPP
@@ -23,7 +24,7 @@ public class NetFrameworkAssemblyResolver
     /// <summary>
     /// The set of assemblies that the .config file describes codebase paths and/or binding redirects for.
     /// </summary>
-    private readonly IReadOnlyDictionary<AssemblySimpleName, AssemblyLoadRules> knownAssemblies;
+    private readonly ReadOnlyDictionary<AssemblySimpleName, AssemblyLoadRules> knownAssemblies;
     private readonly string[] probingPaths;
 #if NETCOREAPP3_1_OR_GREATER
     private readonly Dictionary<AssemblyName, VSAssemblyLoadContext> loadContextsByAssemblyName = new(AssemblyNameEqualityComparer.Instance);
@@ -45,7 +46,7 @@ public class NetFrameworkAssemblyResolver
         this.TraceSource = traceSource;
         this.BaseDir = baseDir ?? Path.GetDirectoryName(Path.GetFullPath(configFile)) ?? throw new ArgumentException("Unable to compute the base directory", nameof(baseDir));
 
-        var knownAssemblies = new Dictionary<AssemblySimpleName, AssemblyLoadRules>();
+        Dictionary<AssemblySimpleName, AssemblyLoadRules> knownAssemblies = new();
 
         XElement configXml = XElement.Load(configFile);
         XElement? assemblyBinding = configXml.Element("runtime")?.Element(XName.Get("assemblyBinding", Xmlns));
@@ -124,7 +125,7 @@ public class NetFrameworkAssemblyResolver
             knownAssemblies[simpleName] = metadata;
         }
 
-        this.knownAssemblies = knownAssemblies;
+        this.knownAssemblies = new ReadOnlyDictionary<AssemblySimpleName, AssemblyLoadRules>(knownAssemblies);
     }
 
     /// <summary>
