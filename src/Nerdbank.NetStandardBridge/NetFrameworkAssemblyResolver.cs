@@ -378,7 +378,7 @@ public class NetFrameworkAssemblyResolver
         AppDomain.CurrentDomain.AssemblyResolve += (s, e) =>
         {
             AssemblyName? redirectedAssemblyName = this.GetAssemblyNameByPolicy(new AssemblyName(e.Name));
-            if (redirectedAssemblyName is { CodeBase: not null } && File.Exists(redirectedAssemblyName.CodeBase))
+            if (redirectedAssemblyName is { CodeBase: not null } && this.FileExists(redirectedAssemblyName.CodeBase))
             {
                 return Assembly.LoadFile(redirectedAssemblyName.CodeBase);
             }
