@@ -250,6 +250,22 @@ public class NetFrameworkAssemblyResolverTests
 #endif
     }
 
+    [Fact]
+    public void ProvideAssemblyPath_NoThrowOnNonExistentPath()
+    {
+        this.loader.ProvideAssemblyPath("no good path");
+        this.loader.ProvideAssemblyPath(Path.Combine(Environment.CurrentDirectory, "nonexistent.dll"));
+        Assert.Null(this.loader.Load(new AssemblyName("nonexistent")));
+    }
+
+    [Fact]
+    public void ProvideAssemblyPath_PathMultipleTimes()
+    {
+        this.loader.ProvideAssemblyPath("no good path");
+        this.loader.ProvideAssemblyPath(Path.Combine(Environment.CurrentDirectory, "nonexistent.dll"));
+        this.loader.ProvideAssemblyPath(Path.Combine(Environment.CurrentDirectory, "nonexistent.dll"));
+    }
+
 #if NETFRAMEWORK
     private class AppDomainHelper : MarshalByRefObject
     {
