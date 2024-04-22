@@ -11,7 +11,6 @@
 
   <ItemGroup>
     <PackageReference Include="Validation" ExcludeAssets="compile;runtime" GeneratePathProperty="true" />
-    <PackageReference Include="Microsoft.CodeCoverage" Condition="'$(TargetFramework)'!='net45'" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="xunit" />
