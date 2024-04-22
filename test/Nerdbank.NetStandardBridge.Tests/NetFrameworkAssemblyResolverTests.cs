@@ -23,9 +23,9 @@ public class NetFrameworkAssemblyResolverTests
         this.loader = new TestableAssemblyLoader(configLocation, TestBaseDir);
     }
 
-    private static AssemblyName ValidationAssemblyName => new AssemblyName($"Validation, Version=2.5.0.0, Culture=neutral, PublicKeyToken=2fc06f0d701809a7");
+    private static AssemblyName ValidationAssemblyName => new($"Validation, Version=2.5.0.0, Culture=neutral, PublicKeyToken=2fc06f0d701809a7");
 
-    private static AssemblyName NonExistingAssemblyName => new AssemblyName($"NonExisting, Version=2.5.0.0, Culture=neutral, PublicKeyToken=2fc06f0d701809a7");
+    private static AssemblyName NonExistingAssemblyName => new($"NonExisting, Version=2.5.0.0, Culture=neutral, PublicKeyToken=2fc06f0d701809a7");
 
     [Fact]
     public void Ctor_ValidatesInputs()
@@ -146,14 +146,14 @@ public class NetFrameworkAssemblyResolverTests
     public void NoMatch_NotStrongNamed()
     {
         this.loader.FileExistsMock = path => false;
-        Assert.Null(this.loader.GetAssemblyNameByPolicy(new AssemblyName("NonExistantSimpleName")));
+        Assert.Null(this.loader.GetAssemblyNameByPolicy(new AssemblyName("NonExistentSimpleName")));
     }
 
     [Fact]
     public void NoMatch_StrongNamed()
     {
         this.loader.FileExistsMock = path => false;
-        AssemblyName? redirectedAssemblyName = this.loader.GetAssemblyNameByPolicy(new AssemblyName("NonExistantSimpleName, Version=3.1.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35"));
+        AssemblyName? redirectedAssemblyName = this.loader.GetAssemblyNameByPolicy(new AssemblyName("NonExistentSimpleName, Version=3.1.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35"));
         Assert.NotNull(redirectedAssemblyName);
         Assert.Null(redirectedAssemblyName!.CodeBase);
     }
@@ -258,7 +258,7 @@ public class NetFrameworkAssemblyResolverTests
             NetFrameworkAssemblyResolver loader = new("Unreachable.config");
             Assert.Throws<FileNotFoundException>(() => Assembly.Load(ValidationAssemblyName));
             Assembly? validationAssembly = loader.Load(ValidationAssemblyName);
-            return validationAssembly is object;
+            return validationAssembly is not null;
         }
 
         internal bool TryLoadAssemblyWithHookup()
@@ -268,7 +268,7 @@ public class NetFrameworkAssemblyResolverTests
             loader.HookupResolver();
             Assert.Throws<FileNotFoundException>(() => Assembly.Load(NonExistingAssemblyName));
             Assembly? validationAssembly = Assembly.Load(ValidationAssemblyName);
-            return validationAssembly is object;
+            return validationAssembly is not null;
         }
     }
 #endif
@@ -289,13 +289,13 @@ public class NetFrameworkAssemblyResolverTests
         internal Func<string, AssemblyName> GetAssemblyNameMock { get; set; } = path => throw new NotImplementedException();
 
         /// <summary>
-        /// Fakes a file existance check, where the file is considered to exist if and only if
+        /// Fakes a file existence check, where the file is considered to exist if and only if
         /// it is <em>not</em> in the base directory or any of the probing paths.
         /// </summary>
         internal bool FileExistsDenySearch(string path) => path != Path.Combine(TestBaseDir, Path.GetFileName(path)) && !this.ProbingPaths.Any(probingDir => path.StartsWith(Path.Combine(TestBaseDir, probingDir), StringComparison.OrdinalIgnoreCase));
 
         /// <summary>
-        /// Implements a real file-existance check.
+        /// Implements a real file-existence check.
         /// </summary>
         internal bool BaseFileExists(string path) => base.FileExists(path);
 

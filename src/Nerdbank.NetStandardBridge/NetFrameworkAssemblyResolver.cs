@@ -26,7 +26,7 @@ public class NetFrameworkAssemblyResolver
     private readonly IReadOnlyDictionary<AssemblySimpleName, AssemblyLoadRules> knownAssemblies;
     private readonly string[] probingPaths;
 #if NETCOREAPP3_1_OR_GREATER
-    private readonly Dictionary<AssemblyName, VSAssemblyLoadContext> loadContextsByAssemblyName = new Dictionary<AssemblyName, VSAssemblyLoadContext>(AssemblyNameEqualityComparer.Instance);
+    private readonly Dictionary<AssemblyName, VSAssemblyLoadContext> loadContextsByAssemblyName = new(AssemblyNameEqualityComparer.Instance);
 #endif
 
     /// <summary>
@@ -49,8 +49,8 @@ public class NetFrameworkAssemblyResolver
 
         XElement configXml = XElement.Load(configFile);
         XElement? assemblyBinding = configXml.Element("runtime")?.Element(XName.Get("assemblyBinding", Xmlns));
-        this.probingPaths = assemblyBinding?.Element(XName.Get("probing", Xmlns))?.Attribute("privatePath")?.Value.Split(';').ToArray() ?? Array.Empty<string>();
-        IEnumerable<XElement> dependentAssemblies = assemblyBinding?.Elements(XName.Get("dependentAssembly", Xmlns)) ?? Enumerable.Empty<XElement>();
+        this.probingPaths = assemblyBinding?.Element(XName.Get("probing", Xmlns))?.Attribute("privatePath")?.Value.Split(';').ToArray() ?? [];
+        IEnumerable<XElement> dependentAssemblies = assemblyBinding?.Elements(XName.Get("dependentAssembly", Xmlns)) ?? [];
         foreach (XElement dependentAssembly in dependentAssemblies)
         {
             XElement? assemblyIdentity = dependentAssembly.Element(XName.Get("assemblyIdentity", Xmlns));
@@ -82,7 +82,7 @@ public class NetFrameworkAssemblyResolver
                 continue;
             }
 
-            if (codeBase is object)
+            if (codeBase is not null)
             {
                 string? version = codeBase.Attribute("version")?.Value;
                 if (version is null || !Version.TryParse(version, out Version? parsedVersion))
@@ -110,12 +110,12 @@ public class NetFrameworkAssemblyResolver
                 }
             }
 
-            if (bindingRedirect is object)
+            if (bindingRedirect is not null)
             {
                 string? oldVersionString = bindingRedirect.Attribute("oldVersion")?.Value;
                 string? newVersionString = bindingRedirect.Attribute("newVersion")?.Value;
 
-                if (oldVersionString is object && newVersionString is object)
+                if (oldVersionString is not null && newVersionString is not null)
                 {
                     metadata = new AssemblyLoadRules(metadata.BindingRedirects.Add(new BindingRedirect(oldVersionString, newVersionString)), metadata.CodeBasePaths);
                 }
@@ -187,7 +187,7 @@ public class NetFrameworkAssemblyResolver
             : new AssemblyName(assemblyName.FullName);
 
         // If a codebase path from the .config file specifies where to find the assembly, only consider that location.
-        if (assemblyFile is object)
+        if (assemblyFile is not null)
         {
             if (this.FileExists(assemblyFile))
             {
@@ -436,7 +436,7 @@ public class NetFrameworkAssemblyResolver
     }
 #endif
 
-    private struct AssemblyLoadRules
+    private readonly struct AssemblyLoadRules
     {
         private readonly ImmutableList<BindingRedirect>? bindingRedirects;
 
@@ -448,11 +448,11 @@ public class NetFrameworkAssemblyResolver
             this.codeBasePaths = codebasePaths;
         }
 
-        internal ImmutableList<BindingRedirect> BindingRedirects => this.bindingRedirects ?? ImmutableList<BindingRedirect>.Empty;
+        internal readonly ImmutableList<BindingRedirect> BindingRedirects => this.bindingRedirects ?? ImmutableList<BindingRedirect>.Empty;
 
-        internal ImmutableDictionary<Version, string> CodeBasePaths => this.codeBasePaths ?? ImmutableDictionary<Version, string>.Empty;
+        internal readonly ImmutableDictionary<Version, string> CodeBasePaths => this.codeBasePaths ?? ImmutableDictionary<Version, string>.Empty;
 
-        internal void TryGetMatch(Version desiredAssemblyVersion, out Version matchingAssemblyVersion, out string? assemblyFile)
+        internal readonly void TryGetMatch(Version desiredAssemblyVersion, out Version matchingAssemblyVersion, out string? assemblyFile)
         {
             matchingAssemblyVersion = desiredAssemblyVersion;
 
@@ -471,10 +471,10 @@ public class NetFrameworkAssemblyResolver
     }
 
     [DebuggerDisplay("{" + nameof(DebuggerDisplay) + ",nq}")]
-    private struct BindingRedirect : IEquatable<BindingRedirect>
+    private readonly struct BindingRedirect : IEquatable<BindingRedirect>
     {
 #if NETSTANDARD2_0 || NETFRAMEWORK
-        private static readonly char[] HyphenArray = new char[] { '-' };
+        private static readonly char[] HyphenArray = ['-'];
 #endif
 
         internal BindingRedirect(string oldVersion, string newVersion)
@@ -498,15 +498,15 @@ public class NetFrameworkAssemblyResolver
 
         internal Version NewVersion { get; }
 
-        private string DebuggerDisplay => $"{this.OldVersion.Start}-{this.OldVersion.End} -> {this.NewVersion}";
+        private readonly string DebuggerDisplay => $"{this.OldVersion.Start}-{this.OldVersion.End} -> {this.NewVersion}";
 
-        public bool Equals(BindingRedirect other) => this.OldVersion.Equals(other.OldVersion) && this.NewVersion == other.NewVersion;
+        public readonly bool Equals(BindingRedirect other) => this.OldVersion.Equals(other.OldVersion) && this.NewVersion == other.NewVersion;
 
-        internal bool Contains(Version version) => version >= this.OldVersion.Start && version <= this.OldVersion.End;
+        internal readonly bool Contains(Version version) => version >= this.OldVersion.Start && version <= this.OldVersion.End;
     }
 
     [DebuggerDisplay("{" + nameof(Name) + ",nq}")]
-    private struct AssemblySimpleName : IEquatable<AssemblySimpleName>
+    private readonly struct AssemblySimpleName : IEquatable<AssemblySimpleName>
     {
         internal AssemblySimpleName(string name, string publicKeyToken)
         {
@@ -524,11 +524,11 @@ public class NetFrameworkAssemblyResolver
 
         internal Memory<byte> PublicKeyToken { get; }
 
-        public override bool Equals(object? obj) => obj is AssemblySimpleName other ? this.Equals(other) : false;
+        public readonly override bool Equals(object? obj) => obj is AssemblySimpleName other && this.Equals(other);
 
-        public bool Equals(AssemblySimpleName other) => this.Name == other.Name && Equal(this.PublicKeyToken.Span, other.PublicKeyToken.Span);
+        public readonly bool Equals(AssemblySimpleName other) => this.Name == other.Name && Equal(this.PublicKeyToken.Span, other.PublicKeyToken.Span);
 
-        public override int GetHashCode() => HashCode.Combine(this.Name, this.PublicKeyToken.Length > 0 ? this.PublicKeyToken.Span[0] : 0);
+        public readonly override int GetHashCode() => HashCode.Combine(this.Name, this.PublicKeyToken.Length > 0 ? this.PublicKeyToken.Span[0] : 0);
 
         private static byte[] ConvertHexStringToByteArray(string hex)
         {
