@@ -2,7 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 // Copyright (c) Microsoft Corporation. All rights reserved.
-#if NET461 || NETSTANDARD2_0_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#if NET462 || NETSTANDARD2_0_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Reflection;
