@@ -1,7 +1,0 @@
-System.Runtime.InteropServices.ImportedFromTypeLibAttribute (forwarded, contained in mscorlib)
-System.Runtime.InteropServices.ImportedFromTypeLibAttribute.ImportedFromTypeLibAttribute(string tlbFile) -> void (forwarded, contained in mscorlib)
-System.Runtime.InteropServices.ImportedFromTypeLibAttribute.Value.get -> string (forwarded, contained in mscorlib)
-System.Runtime.InteropServices.TypeLibVersionAttribute (forwarded, contained in mscorlib)
-System.Runtime.InteropServices.TypeLibVersionAttribute.MajorVersion.get -> int (forwarded, contained in mscorlib)
-System.Runtime.InteropServices.TypeLibVersionAttribute.MinorVersion.get -> int (forwarded, contained in mscorlib)
-System.Runtime.InteropServices.TypeLibVersionAttribute.TypeLibVersionAttribute(int major, int minor) -> void (forwarded, contained in mscorlib)

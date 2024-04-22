@@ -2,7 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 // Copyright (c) Microsoft Corporation. All rights reserved.
-#if NET461 || NETSTANDARD2_0_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+#if NET462 || NETSTANDARD2_0_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Reflection;
@@ -53,9 +53,9 @@ public class NetFrameworkAssemblyResolver
         IEnumerable<XElement> dependentAssemblies = assemblyBinding?.Elements(XName.Get("dependentAssembly", Xmlns)) ?? Enumerable.Empty<XElement>();
         foreach (XElement dependentAssembly in dependentAssemblies)
         {
-            XElement assemblyIdentity = dependentAssembly.Element(XName.Get("assemblyIdentity", Xmlns));
-            XElement codeBase = dependentAssembly.Element(XName.Get("codeBase", Xmlns));
-            XElement bindingRedirect = dependentAssembly.Element(XName.Get("bindingRedirect", Xmlns));
+            XElement? assemblyIdentity = dependentAssembly.Element(XName.Get("assemblyIdentity", Xmlns));
+            XElement? codeBase = dependentAssembly.Element(XName.Get("codeBase", Xmlns));
+            XElement? bindingRedirect = dependentAssembly.Element(XName.Get("bindingRedirect", Xmlns));
             if (assemblyIdentity is null)
             {
                 continue;
@@ -350,9 +350,14 @@ public class NetFrameworkAssemblyResolver
     /// that will assist in finding and loading assemblies based on the rules in the configuration file this instance was initialized with.
     /// </summary>
     /// <param name="loadContext">The load context to add a handler to.</param>
-    /// <param name="blockMoreResolvers"><c>true</c> to block other <see cref="AssemblyLoadContext.Resolving"/> event handlers from being effectively added.</param>
+    /// <param name="blockMoreResolvers"><see langword="true"/> to block other <see cref="AssemblyLoadContext.Resolving"/> event handlers from being effectively added.</param>
     public void HookupResolver(AssemblyLoadContext loadContext, bool blockMoreResolvers)
     {
+        if (loadContext is null)
+        {
+            throw new ArgumentNullException(nameof(loadContext));
+        }
+
         loadContext.Resolving += (s, assemblyName) => this.Load(assemblyName);
 
         if (blockMoreResolvers)
