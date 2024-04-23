@@ -157,17 +157,6 @@ public class NetFrameworkAssemblyResolver
         InvalidConfiguration,
     }
 
-#if NETCOREAPP
-    /// <summary>
-    /// Gets a value indicating whether runtime assembly load requests may be satisfied by searching
-    /// the calling assembly's own directory.
-    /// </summary>
-    /// <remarks>
-    /// This emulates .NET Framework behavior for assemblies that were loaded in the LoadFrom context.
-    /// </remarks>
-    public bool SearchForNearbyAssemblies { get; init; }
-#endif
-
     /// <summary>
     /// Gets the <see cref="TraceSource"/> to use for logging.
     /// </summary>
@@ -369,7 +358,7 @@ public class NetFrameworkAssemblyResolver
     /// If a <see cref="AssemblyName.CodeBase"/> property is provided, that will be used as a fallback after all other attempts to load the assembly have failed.
     /// </param>
     /// <returns>The assembly, if it was loaded.</returns>
-    /// <inheritdoc cref="Load(AssemblyName, string)" path="/exception"/>
+    /// <inheritdoc cref="Load(AssemblyName, string, bool)" path="/exception"/>
     /// <inheritdoc cref="GetAssemblyNameByPolicy(AssemblyName)" path="/exception"/>
     public Assembly? Load(AssemblyName assemblyName)
     {
@@ -378,31 +367,31 @@ public class NetFrameworkAssemblyResolver
             throw new ArgumentNullException(nameof(assemblyName));
         }
 
-        try
-        {
-            AssemblyName? redirectedAssemblyName = this.GetAssemblyNameByPolicy(assemblyName);
-            if (redirectedAssemblyName is { CodeBase: not null })
-            {
-                return this.Load(redirectedAssemblyName, redirectedAssemblyName.CodeBase);
-            }
-
-            if (assemblyName.CodeBase is not null && this.FileExists(assemblyName.CodeBase))
-            {
-                return this.Load(assemblyName, assemblyName.CodeBase);
-            }
-
-            if (this.SearchInFallbackTable(redirectedAssemblyName, assemblyName) is { CodeBase: not null } fallbackAssemblyNameWithCodebase)
-            {
-                return this.Load(fallbackAssemblyNameWithCodebase, fallbackAssemblyNameWithCodebase.CodeBase);
-            }
-
-            return null;
-        }
-        catch (FileNotFoundException)
-        {
-            return null;
-        }
+        return this.LoadOrLoadFrom(assemblyName, null);
     }
+
+    /// <summary>
+    /// Loads the given assembly into the appropriate <see cref="AssemblyLoadContext"/>.
+    /// </summary>
+    /// <param name="assemblyPath">The path of the assembly to load.</param>
+    /// <returns>The assembly, if it was loaded.</returns>
+    /// <remarks>
+    /// This will fetch the <see cref="AssemblyName"/> from the specified <paramref name="assemblyPath"/>
+    /// and first try to load the assembly using standard load rules.
+    /// It will fallback to the specified path if the assembly cannot be found another way.
+    /// </remarks>
+    /// <inheritdoc cref="Load(AssemblyName, string, bool)" path="/exception"/>
+    /// <inheritdoc cref="GetAssemblyNameByPolicy(AssemblyName)" path="/exception"/>
+    public Assembly? LoadFrom(string assemblyPath)
+    {
+        if (assemblyPath is null)
+        {
+            throw new ArgumentNullException(nameof(assemblyPath));
+        }
+
+        return this.LoadOrLoadFrom(this.GetAssemblyName(assemblyPath), assemblyPath);
+    }
+
 #elif NETFRAMEWORK
     /// <summary>
     /// Loads the given assembly into the current <see cref="AppDomain"/>.
@@ -484,14 +473,14 @@ public class NetFrameworkAssemblyResolver
             // Try to fallback to 'nearby' assemblies that are in the same directory as the assembly that is making the request.
             // This emulates .NET Framework behavior for assemblies in the LoadFrom context, although this logic
             // doesn't discriminate on which context the assembly was loaded from.
-            if (this.SearchForNearbyAssemblies && s is VSAssemblyLoadContext { FallbackDirectorySearchPath: not null } customAlc)
+            if (s is VSAssemblyLoadContext { FallbackDirectorySearchPath: not null } customAlc)
             {
                 foreach (string extension in AssemblyExtensions)
                 {
                     string codebase = Path.Combine(customAlc.FallbackDirectorySearchPath, $"{assemblyName.Name}{extension}");
                     if (File.Exists(codebase))
                     {
-                        assembly = this.Load(assemblyName, codebase);
+                        assembly = this.Load(assemblyName, codebase, emulateLoadFrom: true);
                         if (assembly is not null)
                         {
                             return assembly;
@@ -584,23 +573,66 @@ public class NetFrameworkAssemblyResolver
     }
 
 #if NETCOREAPP
+    private Assembly? LoadOrLoadFrom(AssemblyName assemblyName, string? loadFromAssemblyPath)
+    {
+        bool emulateLoadFrom = loadFromAssemblyPath is not null;
+        try
+        {
+            AssemblyName? redirectedAssemblyName = this.GetAssemblyNameByPolicy(assemblyName);
+            if (redirectedAssemblyName is { CodeBase: not null })
+            {
+                return this.Load(redirectedAssemblyName, redirectedAssemblyName.CodeBase, emulateLoadFrom);
+            }
+
+            if (assemblyName.CodeBase is not null && this.FileExists(assemblyName.CodeBase))
+            {
+                return this.Load(assemblyName, assemblyName.CodeBase, emulateLoadFrom);
+            }
+
+            if (loadFromAssemblyPath is not null)
+            {
+                return this.Load(redirectedAssemblyName ?? assemblyName, loadFromAssemblyPath, emulateLoadFrom);
+            }
+
+            if (this.SearchInFallbackTable(redirectedAssemblyName, assemblyName) is { CodeBase: not null } fallbackAssemblyNameWithCodebase)
+            {
+                return this.Load(fallbackAssemblyNameWithCodebase, fallbackAssemblyNameWithCodebase.CodeBase, emulateLoadFrom: true);
+            }
+
+            return null;
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>
     /// Loads the given assembly into the appropriate <see cref="AssemblyLoadContext"/>.
     /// </summary>
     /// <param name="assemblyName">The name of the assembly to load. This is used to look up or create the per-assembly <see cref="AssemblyLoadContext"/> to load it into. All binding redirects should have already been applied.</param>
     /// <param name="codebase">The path to load the assembly from.</param>
+    /// <param name="emulateLoadFrom"><see langword="true" /> to emulate <see cref="Assembly.LoadFrom(string)"/> behavior.</param>
     /// <returns>The assembly, if it was loaded.</returns>
     /// <inheritdoc cref="AssemblyLoadContext.LoadFromAssemblyPath(string)" path="/exception"/>
-    private Assembly? Load(AssemblyName assemblyName, string codebase)
+    private Assembly? Load(AssemblyName assemblyName, string codebase, bool emulateLoadFrom)
     {
         VSAssemblyLoadContext? loadContext;
         lock (this.syncObject)
         {
             if (!this.loadContextsByAssemblyName.TryGetValue(assemblyName, out loadContext))
             {
-                loadContext = new VSAssemblyLoadContext(this, assemblyName, Path.GetDirectoryName(codebase));
+                string? fallbackDirectorySearchPath = emulateLoadFrom ? Path.GetDirectoryName(codebase) : null;
+                loadContext = new VSAssemblyLoadContext(this, assemblyName, fallbackDirectorySearchPath);
                 this.HookupResolver(loadContext, blockMoreResolvers: true);
                 this.loadContextsByAssemblyName.Add(assemblyName, loadContext);
+            }
+            else if (emulateLoadFrom && loadContext.FallbackDirectorySearchPath is null)
+            {
+                // We won't fully emulate LoadFrom context (which would load the assembly *again*),
+                // but we will at least activate the LoadFrom behavior that is to allow that assembly
+                // to trigger resolving referenced assemblies from its same directory.
+                loadContext.FallbackDirectorySearchPath = Path.GetDirectoryName(codebase);
             }
         }
 
@@ -784,7 +816,7 @@ public class NetFrameworkAssemblyResolver
 
 #if NETCOREAPP
     /// <summary>
-    /// The <see cref="AssemblyLoadContext"/> to use for all contexts created by <see cref="Load(AssemblyName, string)"/>.
+    /// The <see cref="AssemblyLoadContext"/> to use for all contexts created by <see cref="Load(AssemblyName, string, bool)"/>.
     /// </summary>
     [DebuggerDisplay("{" + nameof(DebuggerDisplay) + ",nq}")]
     private class VSAssemblyLoadContext : AssemblyLoadContext
@@ -808,9 +840,9 @@ public class NetFrameworkAssemblyResolver
         internal NetFrameworkAssemblyResolver Loader { get; }
 
         /// <summary>
-        /// Gets the path to search for assemblies requested by the assembly loaded into this context.
+        /// Gets or sets the path to search for assemblies requested by the assembly loaded into this context.
         /// </summary>
-        internal string? FallbackDirectorySearchPath { get; }
+        internal string? FallbackDirectorySearchPath { get; set; }
 
         private string DebuggerDisplay => this.Name ?? "(no name)";
     }
