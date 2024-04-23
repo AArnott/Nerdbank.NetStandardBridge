@@ -45,6 +45,11 @@ public class NetFrameworkAssemblyResolver
     private readonly HashSet<string> fallbackLookupPathsRecorded = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
+    /// A set of paths that have been searched for possible assemblies to add to the <see cref="fallbackLookupPaths"/> table.
+    /// </summary>
+    private readonly HashSet<string> loadFromDirectories = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// A dictionary of paths that we have tested for existence, and the result of the check.
     /// </summary>
     private readonly ConcurrentDictionary<string, bool> pathExistChecks = new();
@@ -343,7 +348,9 @@ public class NetFrameworkAssemblyResolver
 
                 try
                 {
-                    return this.GetAssemblyName(assemblyPath);
+                    AssemblyName an = this.GetAssemblyName(assemblyPath);
+                    an.CodeBase = assemblyPath;
+                    return an;
                 }
                 catch
                 {
@@ -598,27 +605,57 @@ public class NetFrameworkAssemblyResolver
         try
         {
             AssemblyName? redirectedAssemblyName = this.GetAssemblyNameByPolicy(assemblyName);
+            Assembly? result = null;
             if (redirectedAssemblyName is { CodeBase: not null })
             {
-                return this.Load(redirectedAssemblyName, redirectedAssemblyName.CodeBase, emulateLoadFrom);
+                result = this.Load(redirectedAssemblyName, redirectedAssemblyName.CodeBase, emulateLoadFrom);
             }
-
-            if (assemblyName.CodeBase is not null && this.FileExists(assemblyName.CodeBase))
+            else if (assemblyName.CodeBase is not null && this.FileExists(assemblyName.CodeBase))
             {
-                return this.Load(assemblyName, assemblyName.CodeBase, emulateLoadFrom);
+                result = this.Load(assemblyName, assemblyName.CodeBase, emulateLoadFrom);
             }
-
-            if (loadFromAssemblyPath is not null)
+            else if (loadFromAssemblyPath is not null)
             {
-                return this.Load(redirectedAssemblyName ?? assemblyName, loadFromAssemblyPath, emulateLoadFrom);
+                result = this.Load(redirectedAssemblyName ?? assemblyName, loadFromAssemblyPath, emulateLoadFrom);
             }
-
-            if (this.SearchInFallbackTable(redirectedAssemblyName, assemblyName) is { CodeBase: not null } fallbackAssemblyNameWithCodebase)
+            else if (this.SearchInFallbackTable(redirectedAssemblyName, assemblyName) is { CodeBase: not null } fallbackAssemblyNameWithCodebase)
             {
-                return this.Load(fallbackAssemblyNameWithCodebase, fallbackAssemblyNameWithCodebase.CodeBase, emulateLoadFrom: true);
+                result = this.Load(fallbackAssemblyNameWithCodebase, fallbackAssemblyNameWithCodebase.CodeBase, emulateLoadFrom: true);
             }
 
-            return null;
+            if (result is not null && emulateLoadFrom)
+            {
+                // Populate the fallback search table with possible assemblies that are found in the directory of the loaded assembly.
+                if (Path.GetDirectoryName(result.Location) is string directory)
+                {
+                    bool alreadySearched;
+                    lock (this.syncObject)
+                    {
+                        alreadySearched = this.loadFromDirectories.Contains(directory);
+                    }
+
+                    if (!alreadySearched)
+                    {
+                        foreach (string extension in AssemblyExtensions)
+                        {
+                            foreach (string file in Directory.EnumerateFiles(directory, $"*{extension}", SearchOption.TopDirectoryOnly))
+                            {
+                                this.ProvideAssemblyPath(file);
+
+                                // We know the file exists, so we can cache that fact.
+                                this.pathExistChecks.TryAdd(file, true);
+                            }
+                        }
+
+                        lock (this.syncObject)
+                        {
+                            this.loadFromDirectories.Add(directory);
+                        }
+                    }
+                }
+            }
+
+            return result;
         }
         catch (FileNotFoundException)
         {
