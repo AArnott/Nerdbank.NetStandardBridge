@@ -21,6 +21,8 @@ public class NetFrameworkAssemblyResolver
 {
     private const string Xmlns = "urn:schemas-microsoft-com:asm.v1";
 
+    private static readonly ImmutableArray<string> AssemblyExtensions = ImmutableArray.Create(".dll", ".exe");
+
     /// <summary>
     /// The set of assemblies that the .config file describes codebase paths and/or binding redirects for.
     /// </summary>
@@ -154,6 +156,17 @@ public class NetFrameworkAssemblyResolver
         /// </summary>
         InvalidConfiguration,
     }
+
+#if NETCOREAPP
+    /// <summary>
+    /// Gets a value indicating whether runtime assembly load requests may be satisfied by searching
+    /// the calling assembly's own directory.
+    /// </summary>
+    /// <remarks>
+    /// This emulates .NET Framework behavior for assemblies that were loaded in the LoadFrom context.
+    /// </remarks>
+    public bool SearchForNearbyAssemblies { get; init; }
+#endif
 
     /// <summary>
     /// Gets the <see cref="TraceSource"/> to use for logging.
@@ -460,7 +473,35 @@ public class NetFrameworkAssemblyResolver
             throw new ArgumentNullException(nameof(loadContext));
         }
 
-        loadContext.Resolving += (s, assemblyName) => this.Load(assemblyName);
+        loadContext.Resolving += (s, assemblyName) =>
+        {
+            Assembly? assembly = this.Load(assemblyName);
+            if (assembly is not null)
+            {
+                return assembly;
+            }
+
+            // Try to fallback to 'nearby' assemblies that are in the same directory as the assembly that is making the request.
+            // This emulates .NET Framework behavior for assemblies in the LoadFrom context, although this logic
+            // doesn't discriminate on which context the assembly was loaded from.
+            if (this.SearchForNearbyAssemblies && s is VSAssemblyLoadContext { FallbackDirectorySearchPath: not null } customAlc)
+            {
+                foreach (string extension in AssemblyExtensions)
+                {
+                    string codebase = Path.Combine(customAlc.FallbackDirectorySearchPath, $"{assemblyName.Name}{extension}");
+                    if (File.Exists(codebase))
+                    {
+                        assembly = this.Load(assemblyName, codebase);
+                        if (assembly is not null)
+                        {
+                            return assembly;
+                        }
+                    }
+                }
+            }
+
+            return null;
+        };
 
         if (blockMoreResolvers)
         {
@@ -557,7 +598,7 @@ public class NetFrameworkAssemblyResolver
         {
             if (!this.loadContextsByAssemblyName.TryGetValue(assemblyName, out loadContext))
             {
-                loadContext = new VSAssemblyLoadContext(this, assemblyName);
+                loadContext = new VSAssemblyLoadContext(this, assemblyName, Path.GetDirectoryName(codebase));
                 this.HookupResolver(loadContext, blockMoreResolvers: true);
                 this.loadContextsByAssemblyName.Add(assemblyName, loadContext);
             }
@@ -753,16 +794,23 @@ public class NetFrameworkAssemblyResolver
         /// </summary>
         /// <param name="owner">The creator of this instance.</param>
         /// <param name="mainAssemblyName">The single assembly meant to be stored in this assembly load context.</param>
-        public VSAssemblyLoadContext(NetFrameworkAssemblyResolver owner, AssemblyName mainAssemblyName)
+        /// <param name="fallbackDirectorySearchPath">The path to search for assemblies requested by the assembly named in <paramref name="mainAssemblyName"/> in case they cannot be found another way.</param>
+        internal VSAssemblyLoadContext(NetFrameworkAssemblyResolver owner, AssemblyName mainAssemblyName, string? fallbackDirectorySearchPath)
             : base(mainAssemblyName.FullName)
         {
             this.Loader = owner;
+            this.FallbackDirectorySearchPath = fallbackDirectorySearchPath;
         }
 
         /// <summary>
         /// Gets the assembly loader used by this <see cref="AssemblyLoadContext"/>.
         /// </summary>
         internal NetFrameworkAssemblyResolver Loader { get; }
+
+        /// <summary>
+        /// Gets the path to search for assemblies requested by the assembly loaded into this context.
+        /// </summary>
+        internal string? FallbackDirectorySearchPath { get; }
 
         private string DebuggerDisplay => this.Name ?? "(no name)";
     }

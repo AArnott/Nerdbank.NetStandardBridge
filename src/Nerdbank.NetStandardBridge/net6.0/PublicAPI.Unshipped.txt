@@ -7,6 +7,8 @@ Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.Load(System.Reflection.A
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.NetFrameworkAssemblyResolver(string! configFile, string? baseDir = null, System.Diagnostics.TraceSource? traceSource = null) -> void
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.ProbingPaths.get -> System.Collections.Generic.IReadOnlyList<string!>!
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.ProvideAssemblyPath(string! assemblyPath) -> void
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.SearchForNearbyAssemblies.get -> bool
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.SearchForNearbyAssemblies.init -> void
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.TraceEvents
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.TraceEvents.InvalidConfiguration = 0 -> Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.TraceEvents
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.TraceSource.get -> System.Diagnostics.TraceSource?
