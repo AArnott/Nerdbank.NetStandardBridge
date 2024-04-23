@@ -3,6 +3,7 @@
 
 // Copyright (c) Microsoft Corporation. All rights reserved.
 #if NET462 || NETSTANDARD2_0_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -42,6 +43,11 @@ public class NetFrameworkAssemblyResolver
     /// A set of paths that have been integrated into the <see cref="fallbackLookupPaths"/> already.
     /// </summary>
     private readonly HashSet<string> fallbackLookupPathsRecorded = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A dictionary of paths that we have tested for existence, and the result of the check.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, bool> pathExistChecks = new();
 
     private readonly string[] probingPaths;
 #if NETCOREAPP3_1_OR_GREATER
@@ -477,8 +483,11 @@ public class NetFrameworkAssemblyResolver
             {
                 foreach (string extension in AssemblyExtensions)
                 {
-                    string codebase = Path.Combine(customAlc.FallbackDirectorySearchPath, $"{assemblyName.Name}{extension}");
-                    if (File.Exists(codebase))
+                    string filename = $"{assemblyName.Name}{extension}";
+                    string codebase = assemblyName.CultureName is null ?
+                        Path.Combine(customAlc.FallbackDirectorySearchPath, filename) :
+                        Path.Combine(customAlc.FallbackDirectorySearchPath, assemblyName.CultureName, filename);
+                    if (this.FileExists(codebase))
                     {
                         assembly = this.Load(assemblyName, codebase, emulateLoadFrom: true);
                         if (assembly is not null)
@@ -520,7 +529,17 @@ public class NetFrameworkAssemblyResolver
 #endif
 
     /// <inheritdoc cref="File.Exists(string)"/>
-    protected virtual bool FileExists(string path) => File.Exists(path);
+    protected virtual bool FileExists(string path)
+    {
+        if (this.pathExistChecks.TryGetValue(path, out bool exists))
+        {
+            return exists;
+        }
+
+        exists = File.Exists(path);
+        this.pathExistChecks.TryAdd(path, exists);
+        return exists;
+    }
 
     /// <inheritdoc cref="AssemblyName.GetAssemblyName(string)"/>
     protected virtual AssemblyName GetAssemblyName(string assemblyFile) => AssemblyName.GetAssemblyName(assemblyFile);
