@@ -46,11 +46,6 @@ public class NetFrameworkAssemblyResolver
     private readonly HashSet<string> fallbackLookupPathsRecorded = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// A set of paths that have been searched for possible assemblies to add to the <see cref="fallbackLookupPaths"/> table.
-    /// </summary>
-    private readonly HashSet<string> loadFromDirectories = new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
     /// A dictionary of paths that we have tested for existence, and the result of the check.
     /// </summary>
     private readonly ConcurrentDictionary<string, bool> pathExistChecks = new();
@@ -604,38 +599,6 @@ public class NetFrameworkAssemblyResolver
             else if (this.SearchInFallbackTable(redirectedAssemblyName, assemblyName) is { CodeBase: not null } fallbackAssemblyNameWithCodebase)
             {
                 result = this.Load(fallbackAssemblyNameWithCodebase, fallbackAssemblyNameWithCodebase.CodeBase, emulateLoadFrom: true);
-            }
-
-            if (result is not null && emulateLoadFrom)
-            {
-                // Populate the fallback search table with possible assemblies that are found in the directory of the loaded assembly.
-                if (Path.GetDirectoryName(result.Location) is string directory)
-                {
-                    bool alreadySearched;
-                    lock (this.syncObject)
-                    {
-                        alreadySearched = this.loadFromDirectories.Contains(directory);
-                    }
-
-                    if (!alreadySearched)
-                    {
-                        foreach (string extension in AssemblyExtensions)
-                        {
-                            foreach (string file in Directory.EnumerateFiles(directory, $"*{extension}", SearchOption.TopDirectoryOnly))
-                            {
-                                this.ProvideAssemblyPath(file);
-
-                                // We know the file exists, so we can cache that fact.
-                                this.pathExistChecks.TryAdd(file, true);
-                            }
-                        }
-
-                        lock (this.syncObject)
-                        {
-                            this.loadFromDirectories.Add(directory);
-                        }
-                    }
-                }
             }
 
             return result;
