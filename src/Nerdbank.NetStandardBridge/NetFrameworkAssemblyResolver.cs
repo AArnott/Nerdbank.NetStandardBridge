@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Andrew Arnott. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-// Copyright (c) Microsoft Corporation. All rights reserved.
-#if NET462 || NETSTANDARD2_0_OR_GREATER || NETCOREAPP3_1_OR_GREATER
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Collections.ObjectModel;
@@ -18,6 +16,9 @@ namespace Nerdbank.NetStandardBridge;
 /// <summary>
 /// Emulates .NET Framework assembly load behavior on .NET Core and .NET 5+.
 /// </summary>
+/// <devremarks>
+/// <see href="https://learn.microsoft.com/en-us/dotnet/core/dependency-loading/loading-managed#algorithm">Reference material for this class</see>.
+/// </devremarks>
 public class NetFrameworkAssemblyResolver
 {
     private const string Xmlns = "urn:schemas-microsoft-com:asm.v1";
@@ -475,38 +476,20 @@ public class NetFrameworkAssemblyResolver
             throw new ArgumentNullException(nameof(loadContext));
         }
 
-        loadContext.Resolving += (s, assemblyName) =>
+        // No need to add a Resolving handler to our own custom ALC, because its built-in behavior takes care of it.
+        if (loadContext is not VSAssemblyLoadContext)
         {
-            Assembly? assembly = this.Load(assemblyName);
-            if (assembly is not null)
+            loadContext.Resolving += (s, assemblyName) =>
             {
-                return assembly;
-            }
-
-            // Try to fallback to 'nearby' assemblies that are in the same directory as the assembly that is making the request.
-            // This emulates .NET Framework behavior for assemblies in the LoadFrom context, although this logic
-            // doesn't discriminate on which context the assembly was loaded from.
-            if (s is VSAssemblyLoadContext { FallbackDirectorySearchPath: not null } customAlc)
-            {
-                foreach (string extension in AssemblyExtensions)
+                Assembly? assembly = this.Load(assemblyName);
+                if (assembly is not null)
                 {
-                    string filename = $"{assemblyName.Name}{extension}";
-                    string codebase = assemblyName.CultureName is null ?
-                        Path.Combine(customAlc.FallbackDirectorySearchPath, filename) :
-                        Path.Combine(customAlc.FallbackDirectorySearchPath, assemblyName.CultureName, filename);
-                    if (this.FileExists(codebase))
-                    {
-                        assembly = this.Load(assemblyName, codebase, emulateLoadFrom: true);
-                        if (assembly is not null)
-                        {
-                            return assembly;
-                        }
-                    }
+                    return assembly;
                 }
-            }
 
-            return null;
-        };
+                return null;
+            };
+        }
 
         if (blockMoreResolvers)
         {
@@ -678,17 +661,12 @@ public class NetFrameworkAssemblyResolver
         {
             if (!this.loadContextsByAssemblyName.TryGetValue(assemblyName, out loadContext))
             {
-                string? fallbackDirectorySearchPath = emulateLoadFrom ? Path.GetDirectoryName(codebase) : null;
-                loadContext = new VSAssemblyLoadContext(this, assemblyName, fallbackDirectorySearchPath);
+                loadContext = new VSAssemblyLoadContext(this, assemblyName)
+                {
+                    DependencySearchPath = emulateLoadFrom ? Path.GetDirectoryName(codebase) : null,
+                };
                 this.HookupResolver(loadContext, blockMoreResolvers: true);
                 this.loadContextsByAssemblyName.Add(assemblyName, loadContext);
-            }
-            else if (emulateLoadFrom && loadContext.FallbackDirectorySearchPath is null)
-            {
-                // We won't fully emulate LoadFrom context (which would load the assembly *again*),
-                // but we will at least activate the LoadFrom behavior that is to allow that assembly
-                // to trigger resolving referenced assemblies from its same directory.
-                loadContext.FallbackDirectorySearchPath = Path.GetDirectoryName(codebase);
             }
         }
 
@@ -872,7 +850,7 @@ public class NetFrameworkAssemblyResolver
 
 #if NETCOREAPP
     /// <summary>
-    /// The <see cref="AssemblyLoadContext"/> to use for all contexts created by <see cref="Load(AssemblyName, string, bool)"/>.
+    /// The <see cref="AssemblyLoadContext"/> to use for all contexts created by <see cref="NetFrameworkAssemblyResolver.Load(AssemblyName, string, bool)"/>.
     /// </summary>
     [DebuggerDisplay("{" + nameof(DebuggerDisplay) + ",nq}")]
     private class VSAssemblyLoadContext : AssemblyLoadContext
@@ -882,12 +860,10 @@ public class NetFrameworkAssemblyResolver
         /// </summary>
         /// <param name="owner">The creator of this instance.</param>
         /// <param name="mainAssemblyName">The single assembly meant to be stored in this assembly load context.</param>
-        /// <param name="fallbackDirectorySearchPath">The path to search for assemblies requested by the assembly named in <paramref name="mainAssemblyName"/> in case they cannot be found another way.</param>
-        internal VSAssemblyLoadContext(NetFrameworkAssemblyResolver owner, AssemblyName mainAssemblyName, string? fallbackDirectorySearchPath)
+        internal VSAssemblyLoadContext(NetFrameworkAssemblyResolver owner, AssemblyName mainAssemblyName)
             : base(mainAssemblyName.FullName)
         {
             this.Loader = owner;
-            this.FallbackDirectorySearchPath = fallbackDirectorySearchPath;
         }
 
         /// <summary>
@@ -896,13 +872,53 @@ public class NetFrameworkAssemblyResolver
         internal NetFrameworkAssemblyResolver Loader { get; }
 
         /// <summary>
-        /// Gets or sets the path to search for assemblies requested by the assembly loaded into this context.
+        /// Gets the path to search for assemblies that the main assembly in this ALC references.
         /// </summary>
-        internal string? FallbackDirectorySearchPath { get; set; }
+        /// <remarks>
+        /// This should only be set for an assembly loaded in the emulated LoadFrom context.
+        /// </remarks>
+        internal string? DependencySearchPath { get; init; }
 
         private string DebuggerDisplay => this.Name ?? "(no name)";
+
+        protected override Assembly? Load(AssemblyName assemblyName)
+        {
+            Assembly? assembly = this.Loader.Load(assemblyName);
+
+            // Try to fallback to 'nearby' assemblies that are in the same directory as the assembly that is making the request.
+            // This emulates .NET Framework behavior for assemblies in the LoadFrom context, although this logic
+            // doesn't discriminate on which context the assembly was loaded from.
+            if (assembly is null && this.DependencySearchPath is not null)
+            {
+                foreach (string extension in AssemblyExtensions)
+                {
+                    string filename = $"{assemblyName.Name}{extension}";
+                    string codebase = assemblyName.CultureName is null ?
+                        Path.Combine(this.DependencySearchPath, filename) :
+                        Path.Combine(this.DependencySearchPath, assemblyName.CultureName, filename);
+                    if (this.Loader.FileExists(codebase))
+                    {
+                        try
+                        {
+                            assembly = this.Loader.LoadFrom(codebase);
+                        }
+                        catch (FileNotFoundException)
+                        {
+                            // Catch FileNotFoundException when attempting to resolve assemblies via this handler to account for missing assemblies.
+                            // This is necessary even with the above exists check since a file might be removed between the check and the load.
+                            continue;
+                        }
+
+                        if (assembly is not null)
+                        {
+                            return assembly;
+                        }
+                    }
+                }
+            }
+
+            return null;
+        }
     }
 #endif
 }
-
-#endif
