@@ -5,6 +5,7 @@ Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.HookupResolver() -> void
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.Load(System.Reflection.AssemblyName! assemblyName) -> System.Reflection.Assembly?
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.NetFrameworkAssemblyResolver(string! configFile, string? baseDir = null, System.Diagnostics.TraceSource? traceSource = null) -> void
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.ProbingPaths.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.ProvideAssemblyPath(string! assemblyPath) -> void
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.TraceEvents
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.TraceEvents.InvalidConfiguration = 0 -> Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.TraceEvents
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.TraceSource.get -> System.Diagnostics.TraceSource?

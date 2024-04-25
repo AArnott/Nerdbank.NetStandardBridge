@@ -2,7 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
 // Copyright (c) Microsoft Corporation. All rights reserved.
-#if NET462 || NETSTANDARD2_0_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -17,14 +17,46 @@ namespace Nerdbank.NetStandardBridge;
 /// <summary>
 /// Emulates .NET Framework assembly load behavior on .NET Core and .NET 5+.
 /// </summary>
+/// <devremarks>
+/// <see href="https://learn.microsoft.com/en-us/dotnet/core/dependency-loading/loading-managed#algorithm">Reference material for this class</see>.
+/// </devremarks>
 public class NetFrameworkAssemblyResolver
 {
     private const string Xmlns = "urn:schemas-microsoft-com:asm.v1";
+
+    private static readonly ImmutableArray<string> AssemblyExtensions = ImmutableArray.Create(".dll", ".exe");
+
+    private static readonly object StaticSyncObject = new();
+
+#if NETCOREAPP
+    private static bool attachedAppDomainResolver;
+#endif
 
     /// <summary>
     /// The set of assemblies that the .config file describes codebase paths and/or binding redirects for.
     /// </summary>
     private readonly ReadOnlyDictionary<AssemblySimpleName, AssemblyLoadRules> knownAssemblies;
+
+    private readonly object syncObject = new();
+
+    /// <summary>
+    /// A dictionary of assembly simple names (e.g. 'streamjsonrpc') to a list of lazily-constructed <see cref="AssemblyName"/> objects
+    /// that <em>may</em> match the assembly whose load has been requested.
+    /// Because the <see cref="AssemblyName.CodeBase"/> properties have been initialized in this collection, a matching <see cref="AssemblyName"/>
+    /// can allow the user to load the assembly based on its path.
+    /// </summary>
+    private readonly Dictionary<string, ImmutableArray<Lazy<AssemblyName?>>> fallbackLookupPaths = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A set of paths that have been integrated into the <see cref="fallbackLookupPaths"/> already.
+    /// </summary>
+    private readonly HashSet<string> fallbackLookupPathsRecorded = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A dictionary of paths that we have tested for existence, and the result of the check.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, bool> pathExistChecks = new();
+
     private readonly string[] probingPaths;
 #if NETCOREAPP3_1_OR_GREATER
     private readonly Dictionary<AssemblyName, VSAssemblyLoadContext> loadContextsByAssemblyName = new(AssemblyNameEqualityComparer.Instance);
@@ -261,6 +293,78 @@ public class NetFrameworkAssemblyResolver
         }
     }
 
+    /// <summary>
+    /// Suggests a path for an assembly that might be loaded later.
+    /// </summary>
+    /// <param name="assemblyPath">The path to the assembly. May be relative to <see cref="Environment.CurrentDirectory"/> or absolute.</param>
+    /// <remarks>
+    /// <para>
+    /// The assembly is not loaded by this call. Rather, it is put into a lookup table so that if the assembly is loaded later
+    /// via <see cref="Assembly.Load(AssemblyName)"/> it may be found.
+    /// This is useful in .NET because .NET tends to drop the value in <see cref="AssemblyName.CodeBase"/> in assembly load stacks
+    /// before the assembly load context has a chance to read it to find the suggested location.
+    /// </para>
+    /// <para>
+    /// The path alone does not provide the full <see cref="AssemblyName"/> to match on, and the file at the provided path is not
+    /// read at the time of this call and in fact may not even exist.
+    /// But when an assembly whose simple name matches the file name (without extension) given in <paramref name="assemblyPath"/>,
+    /// the <see cref="AssemblyName"/> will be lazily retrieved from this path and tested against the assembly whose load is requested.
+    /// If it matches, it will be loaded from this path.
+    /// </para>
+    /// <para>
+    /// All assembly paths provided via this API take fallback position in the priority list when loading an assembly.
+    /// In other words, if the .config file provides a binding redirect or a codebase path for the assembly, these will be considered
+    /// or applied first before attempting to use these lookups.
+    /// </para>
+    /// <para>
+    /// Calling this repeatedly with the same <paramref name="assemblyPath"/> will safely no-op.
+    /// </para>
+    /// </remarks>
+    public void ProvideAssemblyPath(string assemblyPath)
+    {
+        if (assemblyPath is null)
+        {
+            throw new ArgumentNullException(nameof(assemblyPath));
+        }
+
+        assemblyPath = Path.GetFullPath(assemblyPath);
+        lock (this.syncObject)
+        {
+            if (!this.fallbackLookupPathsRecorded.Add(assemblyPath))
+            {
+                // We've already processed this path.
+                return;
+            }
+
+            string simpleName = Path.GetFileNameWithoutExtension(assemblyPath);
+            if (!this.fallbackLookupPaths.TryGetValue(simpleName, out ImmutableArray<Lazy<AssemblyName?>> list))
+            {
+                list = ImmutableArray<Lazy<AssemblyName?>>.Empty;
+            }
+
+            list = list.Add(new Lazy<AssemblyName?>(delegate
+            {
+                if (!this.FileExists(assemblyPath))
+                {
+                    return null;
+                }
+
+                try
+                {
+                    AssemblyName an = this.GetAssemblyName(assemblyPath);
+                    an.CodeBase = assemblyPath;
+                    return an;
+                }
+                catch
+                {
+                    return null;
+                }
+            }));
+
+            this.fallbackLookupPaths[simpleName] = list;
+        }
+    }
+
 #if NETCOREAPP3_1_OR_GREATER
     /// <summary>
     /// Loads the given assembly into the appropriate <see cref="AssemblyLoadContext"/>.
@@ -270,30 +374,40 @@ public class NetFrameworkAssemblyResolver
     /// If a <see cref="AssemblyName.CodeBase"/> property is provided, that will be used as a fallback after all other attempts to load the assembly have failed.
     /// </param>
     /// <returns>The assembly, if it was loaded.</returns>
-    /// <inheritdoc cref="Load(AssemblyName, string)" path="/exception"/>
+    /// <inheritdoc cref="Load(AssemblyName, string, bool)" path="/exception"/>
     /// <inheritdoc cref="GetAssemblyNameByPolicy(AssemblyName)" path="/exception"/>
     public Assembly? Load(AssemblyName assemblyName)
     {
-        try
+        if (assemblyName is null)
         {
-            AssemblyName? redirectedAssemblyName = this.GetAssemblyNameByPolicy(assemblyName);
-            if (redirectedAssemblyName is { CodeBase: not null })
-            {
-                return this.Load(redirectedAssemblyName, redirectedAssemblyName.CodeBase);
-            }
-
-            if (assemblyName.CodeBase is not null && this.FileExists(assemblyName.CodeBase))
-            {
-                return this.Load(assemblyName, assemblyName.CodeBase);
-            }
-
-            return null;
+            throw new ArgumentNullException(nameof(assemblyName));
         }
-        catch (FileNotFoundException)
-        {
-            return null;
-        }
+
+        return this.LoadOrLoadFrom(assemblyName, null);
     }
+
+    /// <summary>
+    /// Loads the given assembly into the appropriate <see cref="AssemblyLoadContext"/>.
+    /// </summary>
+    /// <param name="assemblyPath">The path of the assembly to load.</param>
+    /// <returns>The assembly, if it was loaded.</returns>
+    /// <remarks>
+    /// This will fetch the <see cref="AssemblyName"/> from the specified <paramref name="assemblyPath"/>
+    /// and first try to load the assembly using standard load rules.
+    /// It will fallback to the specified path if the assembly cannot be found another way.
+    /// </remarks>
+    /// <inheritdoc cref="Load(AssemblyName, string, bool)" path="/exception"/>
+    /// <inheritdoc cref="GetAssemblyNameByPolicy(AssemblyName)" path="/exception"/>
+    public Assembly? LoadFrom(string assemblyPath)
+    {
+        if (assemblyPath is null)
+        {
+            throw new ArgumentNullException(nameof(assemblyPath));
+        }
+
+        return this.LoadOrLoadFrom(this.GetAssemblyName(assemblyPath), assemblyPath);
+    }
+
 #elif NETFRAMEWORK
     /// <summary>
     /// Loads the given assembly into the current <see cref="AppDomain"/>.
@@ -318,6 +432,11 @@ public class NetFrameworkAssemblyResolver
             if (assemblyName.CodeBase is not null && this.FileExists(assemblyName.CodeBase))
             {
                 return Assembly.LoadFrom(assemblyName.CodeBase);
+            }
+
+            if (this.SearchInFallbackTable(redirectedAssemblyName, assemblyName) is { CodeBase: not null } fallbackAssemblyNameWithCodebase)
+            {
+                return Assembly.LoadFrom(fallbackAssemblyNameWithCodebase.CodeBase);
             }
 
             return null;
@@ -359,13 +478,39 @@ public class NetFrameworkAssemblyResolver
             throw new ArgumentNullException(nameof(loadContext));
         }
 
-        loadContext.Resolving += (s, assemblyName) => this.Load(assemblyName);
+        loadContext.Resolving += (s, assemblyName) =>
+        {
+            Assembly? assembly = this.Load(assemblyName);
+            return assembly;
+        };
 
         if (blockMoreResolvers)
         {
             // Add another handler that just throws. This prevents .NET Core from querying any further resolvers
             // that folks might try to add to the default context.
             loadContext.Resolving += (s, e) => throw new FileNotFoundException($"Assembly '{e}' could not be found.");
+        }
+
+        if (!attachedAppDomainResolver)
+        {
+            lock (StaticSyncObject)
+            {
+                if (!attachedAppDomainResolver)
+                {
+                    AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
+                    {
+                        Assembly? assembly = null;
+                        if (args.RequestingAssembly is not null &&
+                            AssemblyLoadContext.GetLoadContext(args.RequestingAssembly) is VSAssemblyLoadContext { DependencySearchPath: not null } alc)
+                        {
+                            assembly = this.TryLoadNearbyAssembly(alc, new AssemblyName(args.Name));
+                        }
+
+                        return assembly;
+                    };
+                    attachedAppDomainResolver = true;
+                }
+            }
         }
     }
 #elif NETFRAMEWORK
@@ -378,7 +523,7 @@ public class NetFrameworkAssemblyResolver
         AppDomain.CurrentDomain.AssemblyResolve += (s, e) =>
         {
             AssemblyName? redirectedAssemblyName = this.GetAssemblyNameByPolicy(new AssemblyName(e.Name));
-            if (redirectedAssemblyName is { CodeBase: not null } && File.Exists(redirectedAssemblyName.CodeBase))
+            if (redirectedAssemblyName is { CodeBase: not null } && this.FileExists(redirectedAssemblyName.CodeBase))
             {
                 return Assembly.LoadFile(redirectedAssemblyName.CodeBase);
             }
@@ -389,7 +534,17 @@ public class NetFrameworkAssemblyResolver
 #endif
 
     /// <inheritdoc cref="File.Exists(string)"/>
-    protected virtual bool FileExists(string path) => File.Exists(path);
+    protected virtual bool FileExists(string path)
+    {
+        if (this.pathExistChecks.TryGetValue(path, out bool exists))
+        {
+            return exists;
+        }
+
+        exists = File.Exists(path);
+        this.pathExistChecks.TryAdd(path, exists);
+        return exists;
+    }
 
     /// <inheritdoc cref="AssemblyName.GetAssemblyName(string)"/>
     protected virtual AssemblyName GetAssemblyName(string assemblyFile) => AssemblyName.GetAssemblyName(assemblyFile);
@@ -412,28 +567,130 @@ public class NetFrameworkAssemblyResolver
         return true;
     }
 
+    private AssemblyName? SearchInFallbackTable(AssemblyName? redirectedAssemblyName, AssemblyName originalAssemblyName)
+    {
+        // Try the fallback path, but only if no codebase was provided.
+        if (redirectedAssemblyName is null or { CodeBase: null } && originalAssemblyName is { CodeBase: null, Name: not null })
+        {
+            AssemblyName assemblyNameToConsider = redirectedAssemblyName ?? originalAssemblyName;
+            bool success;
+            ImmutableArray<Lazy<AssemblyName?>> list;
+            lock (this.syncObject)
+            {
+                success = this.fallbackLookupPaths.TryGetValue(originalAssemblyName.Name, out list);
+            }
+
+            if (success)
+            {
+                foreach (Lazy<AssemblyName?> lazy in list)
+                {
+                    if (lazy.Value is not null && AssemblyNameEqualityComparer.Instance.Equals(assemblyNameToConsider, lazy.Value))
+                    {
+                        // We found a match. Load it.
+                        return lazy.Value;
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
 #if NETCOREAPP
+    private Assembly? LoadOrLoadFrom(AssemblyName assemblyName, string? loadFromAssemblyPath)
+    {
+        bool emulateLoadFrom = loadFromAssemblyPath is not null;
+        try
+        {
+            AssemblyName? redirectedAssemblyName = this.GetAssemblyNameByPolicy(assemblyName);
+            Assembly? result = null;
+            if (redirectedAssemblyName is { CodeBase: not null })
+            {
+                result = this.Load(redirectedAssemblyName, redirectedAssemblyName.CodeBase, emulateLoadFrom);
+            }
+            else if (assemblyName.CodeBase is not null && this.FileExists(assemblyName.CodeBase))
+            {
+                result = this.Load(assemblyName, assemblyName.CodeBase, emulateLoadFrom);
+            }
+            else if (loadFromAssemblyPath is not null)
+            {
+                result = this.Load(redirectedAssemblyName ?? assemblyName, loadFromAssemblyPath, emulateLoadFrom);
+            }
+            else if (this.SearchInFallbackTable(redirectedAssemblyName, assemblyName) is { CodeBase: not null } fallbackAssemblyNameWithCodebase)
+            {
+                result = this.Load(fallbackAssemblyNameWithCodebase, fallbackAssemblyNameWithCodebase.CodeBase, emulateLoadFrom: true);
+            }
+
+            return result;
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>
     /// Loads the given assembly into the appropriate <see cref="AssemblyLoadContext"/>.
     /// </summary>
     /// <param name="assemblyName">The name of the assembly to load. This is used to look up or create the per-assembly <see cref="AssemblyLoadContext"/> to load it into. All binding redirects should have already been applied.</param>
     /// <param name="codebase">The path to load the assembly from.</param>
+    /// <param name="emulateLoadFrom"><see langword="true" /> to emulate <see cref="Assembly.LoadFrom(string)"/> behavior.</param>
     /// <returns>The assembly, if it was loaded.</returns>
     /// <inheritdoc cref="AssemblyLoadContext.LoadFromAssemblyPath(string)" path="/exception"/>
-    private Assembly? Load(AssemblyName assemblyName, string codebase)
+    private Assembly? Load(AssemblyName assemblyName, string codebase, bool emulateLoadFrom)
     {
         VSAssemblyLoadContext? loadContext;
-        lock (this.loadContextsByAssemblyName)
+        lock (this.syncObject)
         {
             if (!this.loadContextsByAssemblyName.TryGetValue(assemblyName, out loadContext))
             {
-                loadContext = new VSAssemblyLoadContext(this, assemblyName);
+                loadContext = new VSAssemblyLoadContext(this, assemblyName)
+                {
+                    DependencySearchPath = emulateLoadFrom ? Path.GetDirectoryName(codebase) : null,
+                };
                 this.HookupResolver(loadContext, blockMoreResolvers: true);
                 this.loadContextsByAssemblyName.Add(assemblyName, loadContext);
             }
         }
 
         return loadContext.LoadFromAssemblyPath(codebase);
+    }
+
+    private Assembly? TryLoadNearbyAssembly(VSAssemblyLoadContext requestingContext, AssemblyName assemblyName)
+    {
+        // Try to fallback to 'nearby' assemblies that are in the same directory as the assembly that is making the request.
+        // This emulates .NET Framework behavior for assemblies in the LoadFrom context, although this logic
+        // doesn't discriminate on which context the assembly was loaded from.
+        if (requestingContext.DependencySearchPath is not null)
+        {
+            foreach (string extension in AssemblyExtensions)
+            {
+                string filename = $"{assemblyName.Name}{extension}";
+                string codebase = assemblyName.CultureName is null ?
+                    Path.Combine(requestingContext.DependencySearchPath, filename) :
+                    Path.Combine(requestingContext.DependencySearchPath, assemblyName.CultureName, filename);
+                if (this.FileExists(codebase))
+                {
+                    try
+                    {
+                        Assembly? assembly = this.LoadOrLoadFrom(assemblyName, codebase);
+
+                        if (assembly is not null)
+                        {
+                            return assembly;
+                        }
+                    }
+                    catch (FileNotFoundException)
+                    {
+                        // Catch FileNotFoundException when attempting to resolve assemblies via this handler to account for missing assemblies.
+                        // This is necessary even with the above exists check since a file might be removed between the check and the load.
+                        continue;
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 #endif
 
@@ -613,7 +870,7 @@ public class NetFrameworkAssemblyResolver
 
 #if NETCOREAPP
     /// <summary>
-    /// The <see cref="AssemblyLoadContext"/> to use for all contexts created by <see cref="Load(AssemblyName, string)"/>.
+    /// The <see cref="AssemblyLoadContext"/> to use for all contexts created by <see cref="NetFrameworkAssemblyResolver.Load(AssemblyName, string, bool)"/>.
     /// </summary>
     [DebuggerDisplay("{" + nameof(DebuggerDisplay) + ",nq}")]
     private class VSAssemblyLoadContext : AssemblyLoadContext
@@ -623,7 +880,7 @@ public class NetFrameworkAssemblyResolver
         /// </summary>
         /// <param name="owner">The creator of this instance.</param>
         /// <param name="mainAssemblyName">The single assembly meant to be stored in this assembly load context.</param>
-        public VSAssemblyLoadContext(NetFrameworkAssemblyResolver owner, AssemblyName mainAssemblyName)
+        internal VSAssemblyLoadContext(NetFrameworkAssemblyResolver owner, AssemblyName mainAssemblyName)
             : base(mainAssemblyName.FullName)
         {
             this.Loader = owner;
@@ -634,9 +891,15 @@ public class NetFrameworkAssemblyResolver
         /// </summary>
         internal NetFrameworkAssemblyResolver Loader { get; }
 
+        /// <summary>
+        /// Gets the path to search for assemblies that the main assembly in this ALC references.
+        /// </summary>
+        /// <remarks>
+        /// This should only be set for an assembly loaded in the emulated LoadFrom context.
+        /// </remarks>
+        internal string? DependencySearchPath { get; init; }
+
         private string DebuggerDisplay => this.Name ?? "(no name)";
     }
 #endif
 }
-
-#endif
