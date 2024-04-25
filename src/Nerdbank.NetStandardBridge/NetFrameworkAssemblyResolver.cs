@@ -846,12 +846,24 @@ public class NetFrameworkAssemblyResolver
 
         protected override Assembly? Load(AssemblyName assemblyName)
         {
-            Assembly? assembly = this.Loader.Load(assemblyName);
+            // If the default ALC can load it, let it.
+            Assembly? assembly = Default.LoadFromAssemblyName(assemblyName);
+            if (assembly is not null)
+            {
+                return assembly;
+            }
+
+            // Engage our own policies, which if successful, will load the assembly into its own new ALC.
+            assembly = this.Loader.Load(assemblyName);
+            if (assembly is not null)
+            {
+                return assembly;
+            }
 
             // Try to fallback to 'nearby' assemblies that are in the same directory as the assembly that is making the request.
             // This emulates .NET Framework behavior for assemblies in the LoadFrom context, although this logic
             // doesn't discriminate on which context the assembly was loaded from.
-            if (assembly is null && this.DependencySearchPath is not null)
+            if (this.DependencySearchPath is not null)
             {
                 foreach (string extension in AssemblyExtensions)
                 {
