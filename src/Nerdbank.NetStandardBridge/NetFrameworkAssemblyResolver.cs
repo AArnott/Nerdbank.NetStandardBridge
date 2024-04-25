@@ -25,6 +25,12 @@ public class NetFrameworkAssemblyResolver
 
     private static readonly ImmutableArray<string> AssemblyExtensions = ImmutableArray.Create(".dll", ".exe");
 
+    private static readonly object StaticSyncObject = new();
+
+#if NETCOREAPP
+    private static bool attachedAppDomainResolver;
+#endif
+
     /// <summary>
     /// The set of assemblies that the .config file describes codebase paths and/or binding redirects for.
     /// </summary>
@@ -471,26 +477,39 @@ public class NetFrameworkAssemblyResolver
             throw new ArgumentNullException(nameof(loadContext));
         }
 
-        // No need to add a Resolving handler to our own custom ALC, because its built-in behavior takes care of it.
-        if (loadContext is not VSAssemblyLoadContext)
+        loadContext.Resolving += (s, assemblyName) =>
         {
-            loadContext.Resolving += (s, assemblyName) =>
-            {
-                Assembly? assembly = this.Load(assemblyName);
-                if (assembly is not null)
-                {
-                    return assembly;
-                }
-
-                return null;
-            };
-        }
+            Assembly? assembly = this.Load(assemblyName);
+            return assembly;
+        };
 
         if (blockMoreResolvers)
         {
             // Add another handler that just throws. This prevents .NET Core from querying any further resolvers
             // that folks might try to add to the default context.
             loadContext.Resolving += (s, e) => throw new FileNotFoundException($"Assembly '{e}' could not be found.");
+        }
+
+        if (!attachedAppDomainResolver)
+        {
+            lock (StaticSyncObject)
+            {
+                if (!attachedAppDomainResolver)
+                {
+                    AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
+                    {
+                        Assembly? assembly = null;
+                        if (args.RequestingAssembly is not null &&
+                            AssemblyLoadContext.GetLoadContext(args.RequestingAssembly) is VSAssemblyLoadContext { DependencySearchPath: not null } alc)
+                        {
+                            assembly = this.TryLoadNearbyAssembly(alc, new AssemblyName(args.Name));
+                        }
+
+                        return assembly;
+                    };
+                    attachedAppDomainResolver = true;
+                }
+            }
         }
     }
 #elif NETFRAMEWORK
@@ -634,6 +653,43 @@ public class NetFrameworkAssemblyResolver
         }
 
         return loadContext.LoadFromAssemblyPath(codebase);
+    }
+
+    private Assembly? TryLoadNearbyAssembly(VSAssemblyLoadContext requestingContext, AssemblyName assemblyName)
+    {
+        // Try to fallback to 'nearby' assemblies that are in the same directory as the assembly that is making the request.
+        // This emulates .NET Framework behavior for assemblies in the LoadFrom context, although this logic
+        // doesn't discriminate on which context the assembly was loaded from.
+        if (requestingContext.DependencySearchPath is not null)
+        {
+            foreach (string extension in AssemblyExtensions)
+            {
+                string filename = $"{assemblyName.Name}{extension}";
+                string codebase = assemblyName.CultureName is null ?
+                    Path.Combine(requestingContext.DependencySearchPath, filename) :
+                    Path.Combine(requestingContext.DependencySearchPath, assemblyName.CultureName, filename);
+                if (this.FileExists(codebase))
+                {
+                    try
+                    {
+                        Assembly? assembly = this.LoadOrLoadFrom(assemblyName, codebase);
+
+                        if (assembly is not null)
+                        {
+                            return assembly;
+                        }
+                    }
+                    catch (FileNotFoundException)
+                    {
+                        // Catch FileNotFoundException when attempting to resolve assemblies via this handler to account for missing assemblies.
+                        // This is necessary even with the above exists check since a file might be removed between the check and the load.
+                        continue;
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 #endif
 
@@ -843,57 +899,6 @@ public class NetFrameworkAssemblyResolver
         internal string? DependencySearchPath { get; init; }
 
         private string DebuggerDisplay => this.Name ?? "(no name)";
-
-        protected override Assembly? Load(AssemblyName assemblyName)
-        {
-            // If the default ALC can load it, let it.
-            Assembly? assembly = Default.LoadFromAssemblyName(assemblyName);
-            if (assembly is not null)
-            {
-                return assembly;
-            }
-
-            // Engage our own policies, which if successful, will load the assembly into its own new ALC.
-            assembly = this.Loader.Load(assemblyName);
-            if (assembly is not null)
-            {
-                return assembly;
-            }
-
-            // Try to fallback to 'nearby' assemblies that are in the same directory as the assembly that is making the request.
-            // This emulates .NET Framework behavior for assemblies in the LoadFrom context, although this logic
-            // doesn't discriminate on which context the assembly was loaded from.
-            if (this.DependencySearchPath is not null)
-            {
-                foreach (string extension in AssemblyExtensions)
-                {
-                    string filename = $"{assemblyName.Name}{extension}";
-                    string codebase = assemblyName.CultureName is null ?
-                        Path.Combine(this.DependencySearchPath, filename) :
-                        Path.Combine(this.DependencySearchPath, assemblyName.CultureName, filename);
-                    if (this.Loader.FileExists(codebase))
-                    {
-                        try
-                        {
-                            assembly = this.Loader.LoadFrom(codebase);
-                        }
-                        catch (FileNotFoundException)
-                        {
-                            // Catch FileNotFoundException when attempting to resolve assemblies via this handler to account for missing assemblies.
-                            // This is necessary even with the above exists check since a file might be removed between the check and the load.
-                            continue;
-                        }
-
-                        if (assembly is not null)
-                        {
-                            return assembly;
-                        }
-                    }
-                }
-            }
-
-            return null;
-        }
     }
 #endif
 }
