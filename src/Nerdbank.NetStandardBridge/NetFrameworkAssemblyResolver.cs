@@ -57,6 +57,16 @@ public class NetFrameworkAssemblyResolver
     /// </summary>
     private readonly ConcurrentDictionary<string, bool> pathExistChecks = new();
 
+#if NETCOREAPP
+    /// <summary>
+    /// A collection of assemblies that must never be loaded into more than their original <see cref="AssemblyLoadContext"/>.
+    /// </summary>
+    private readonly ConcurrentDictionary<AssemblyName, Assembly> singletonAssemblies = new(AssemblyNameEqualityComparer.Instance)
+    {
+        [typeof(NetFrameworkAssemblyResolver).Assembly.GetName()] = typeof(NetFrameworkAssemblyResolver).Assembly,
+    };
+#endif
+
     private readonly string[] probingPaths;
 #if NETCOREAPP3_1_OR_GREATER
     private readonly Dictionary<AssemblyName, VSAssemblyLoadContext> loadContextsByAssemblyName = new(AssemblyNameEqualityComparer.Instance);
@@ -513,6 +523,20 @@ public class NetFrameworkAssemblyResolver
             }
         }
     }
+
+    /// <summary>
+    /// Registers a bootstrapping assembly so that it will never be re-loaded into another <see cref="AssemblyLoadContext"/>.
+    /// </summary>
+    /// <param name="assembly">The bootstrapping assembly.</param>
+    public void RegisterBootstrappingAssembly(Assembly assembly)
+    {
+        if (assembly is null)
+        {
+            throw new ArgumentNullException(nameof(assembly));
+        }
+
+        this.singletonAssemblies.TryAdd(assembly.GetName(), assembly);
+    }
 #elif NETFRAMEWORK
     /// <summary>
     /// Adds an <see cref="AppDomain.AssemblyResolve"/> event handler
@@ -639,6 +663,13 @@ public class NetFrameworkAssemblyResolver
     /// <inheritdoc cref="AssemblyLoadContext.LoadFromAssemblyPath(string)" path="/exception"/>
     private Assembly? Load(AssemblyName assemblyName, string codebase, bool emulateLoadFrom)
     {
+        // Certain bootstrapping assemblies for the process that have already loaded into a
+        // different kind of ALC must never be re-loaded into our own ALC.
+        if (this.singletonAssemblies.TryGetValue(assemblyName, out Assembly? assembly))
+        {
+            return assembly;
+        }
+
         VSAssemblyLoadContext? loadContext;
         lock (this.syncObject)
         {
