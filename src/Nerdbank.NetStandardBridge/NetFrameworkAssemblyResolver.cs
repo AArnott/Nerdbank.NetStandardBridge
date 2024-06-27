@@ -644,6 +644,12 @@ public class NetFrameworkAssemblyResolver
             {
                 result = this.Load(fallbackAssemblyNameWithCodebase, fallbackAssemblyNameWithCodebase.CodeBase, emulateLoadFrom: true);
             }
+            else if (redirectedAssemblyName is not null && redirectedAssemblyName.Version != assemblyName.Version)
+            {
+                // Since we couldn't find it ourselves, but we have a binding redirect for it,
+                // try searching the default ALC for it after applying the binding redirect.
+                result = AssemblyLoadContext.Default.LoadFromAssemblyName(redirectedAssemblyName);
+            }
 
             return result;
         }
