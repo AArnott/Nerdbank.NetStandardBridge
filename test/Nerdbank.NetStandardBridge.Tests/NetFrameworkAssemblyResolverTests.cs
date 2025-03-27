@@ -25,7 +25,7 @@ public class NetFrameworkAssemblyResolverTests
         this.loader = new TestableAssemblyLoader(configLocation, TestBaseDir);
     }
 
-    private static AssemblyName ValidationAssemblyName => new($"Validation, Version=2.5.0.0, Culture=neutral, PublicKeyToken=2fc06f0d701809a7");
+    private static AssemblyName ValidationAssemblyName => new($"Validation, Version=2.6.0.0, Culture=neutral, PublicKeyToken=2fc06f0d701809a7");
 
     private static AssemblyName NonExistingAssemblyName => new($"NonExisting, Version=2.5.0.0, Culture=neutral, PublicKeyToken=2fc06f0d701809a7");
 
