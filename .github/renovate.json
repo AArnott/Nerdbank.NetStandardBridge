@@ -1,6 +1,9 @@
 {
 	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
-	"extends": ["config:best-practices"],
+	"extends": [
+		"config:best-practices",
+		"github>microsoft/vs-renovate-presets:dotnet_packages_below(9)"
+	],
 	"labels": ["dependencies"],
 	"packageRules": [
 		{
