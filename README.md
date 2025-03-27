@@ -2,7 +2,7 @@
 
 ***A reference + facade library to bring additional types to .NET Standard.***
 
-[![NuGet package](https://img.shields.io/nuget/v/Nerdbank.NetStandardBridge.svg)](https://nuget.org/packages/Nerdbank.NetStandardBridge)
+[![NuGet package](https://img.shields.io/nuget/v/Nerdbank.NetStandardBridge.svg)](https://www.nuget.org/packages/Nerdbank.NetStandardBridge)
 [![Build Status](https://dev.azure.com/andrewarnott/OSS/_apis/build/status/Nerdbank.NetStandardBridge/Nerdbank.NetStandardBridge?branchName=main)](https://dev.azure.com/andrewarnott/OSS/_build/latest?definitionId=36&branchName=main)
 
 ## Features
