@@ -184,6 +184,11 @@ public class NetFrameworkAssemblyResolver
     }
 
     /// <summary>
+    /// Gets the mapping of assemblies and their loading rules as retrieved from the .config file.
+    /// </summary>
+    protected ReadOnlyDictionary<AssemblySimpleName, AssemblyLoadRules> KnownAssemblies => this.knownAssemblies;
+
+    /// <summary>
     /// Gets the <see cref="TraceSource"/> to use for logging.
     /// </summary>
     protected TraceSource? TraceSource { get; }
@@ -198,10 +203,17 @@ public class NetFrameworkAssemblyResolver
     /// </summary>
     protected string BaseDir { get; }
 
+    /// <inheritdoc cref="GetAssemblyNameByPolicy(AssemblyName, bool)"/>
+    public AssemblyName? GetAssemblyNameByPolicy(AssemblyName assemblyName) => this.GetAssemblyNameByPolicy(assemblyName, validateResult: true);
+
     /// <summary>
     /// Applies binding redirect and assembly search path policies to create an <see cref="AssemblyName"/> that is ready to load.
     /// </summary>
     /// <param name="assemblyName">The name of the requested assembly.</param>
+    /// <param name="validateResult">
+    /// A value indicating whether to validate that the returned assembly has the expected assembly name.
+    /// When <see langword="true" /> and the assembly name mismatches, an <see cref="InvalidOperationException"/> is thrown.
+    /// </param>
     /// <returns>
     /// A copy of <paramref name="assemblyName"/> with binding redirect policy applied.
     /// The <see cref="AssemblyName.CodeBase"/> property will carry the path to the assembly that <em>should</em> be used if the assembly could be found
@@ -211,8 +223,11 @@ public class NetFrameworkAssemblyResolver
     /// <remarks>
     /// The proposed assembly may not have the same name as the one requested in <paramref name="assemblyName"/> due to binding redirects.
     /// </remarks>
-    /// <exception cref="InvalidOperationException">Thrown when an assembly was found but did not match the expected version or public key token.</exception>
-    public AssemblyName? GetAssemblyNameByPolicy(AssemblyName assemblyName)
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when an assembly was found but did not match the expected version or public key token,
+    /// unless <paramref name="validateResult"/> is <see langword="false"/>.
+    /// </exception>
+    public AssemblyName? GetAssemblyNameByPolicy(AssemblyName assemblyName, bool validateResult)
     {
         if (assemblyName is null)
         {
@@ -237,7 +252,7 @@ public class NetFrameworkAssemblyResolver
             if (this.FileExists(assemblyFile))
             {
                 AssemblyName actualAssemblyName = VerifyAssemblyMatch(assemblyFile, requireVersionMatch: false);
-                if (actualAssemblyName.Version != matchingAssemblyVersion)
+                if (validateResult && actualAssemblyName.Version != matchingAssemblyVersion)
                 {
                     throw new InvalidOperationException($"Assembly with matching name \"{assemblyName.Name}\" found but non-matching version. Expected {assemblyName.Version} but found {actualAssemblyName.Version}.");
                 }
@@ -273,6 +288,11 @@ public class NetFrameworkAssemblyResolver
         AssemblyName VerifyAssemblyMatch(string assemblyFile, bool requireVersionMatch)
         {
             AssemblyName actualAssemblyName = this.GetAssemblyName(assemblyFile);
+            if (!validateResult)
+            {
+                return actualAssemblyName;
+            }
+
             if (requireVersionMatch && actualAssemblyName.Version != matchingAssemblyVersion)
             {
                 throw new InvalidOperationException($"Assembly with matching name \"{assemblyName.Name}\" found but non-matching version. Expected {matchingAssemblyVersion} but found {actualAssemblyName.Version}.");
@@ -289,10 +309,7 @@ public class NetFrameworkAssemblyResolver
                 }
                 else
                 {
-                    for (int i = 0; i < actualPublicKeyToken.Length; i++)
-                    {
-                        mismatch |= actualPublicKeyToken[i] != expectedPublicKeyToken[i];
-                    }
+                    mismatch |= !actualPublicKeyToken.SequenceEqual(expectedPublicKeyToken);
                 }
 
                 if (mismatch)
@@ -433,6 +450,11 @@ public class NetFrameworkAssemblyResolver
     /// <inheritdoc cref="GetAssemblyNameByPolicy(AssemblyName)" path="/exception"/>
     public Assembly? Load(AssemblyName assemblyName)
     {
+        if (assemblyName is null)
+        {
+            throw new ArgumentNullException(nameof(assemblyName));
+        }
+
         try
         {
             AssemblyName? redirectedAssemblyName = this.GetAssemblyNameByPolicy(assemblyName);
@@ -575,24 +597,6 @@ public class NetFrameworkAssemblyResolver
     /// <inheritdoc cref="AssemblyName.GetAssemblyName(string)"/>
     protected virtual AssemblyName GetAssemblyName(string assemblyFile) => AssemblyName.GetAssemblyName(assemblyFile);
 
-    private static bool Equal(Span<byte> buffer1, Span<byte> buffer2)
-    {
-        if (buffer1.Length != buffer2.Length)
-        {
-            return false;
-        }
-
-        for (int i = 0; i < buffer1.Length; i++)
-        {
-            if (buffer1[i] != buffer2[i])
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
     private AssemblyName? SearchInFallbackTable(AssemblyName? redirectedAssemblyName, AssemblyName originalAssemblyName)
     {
         // Try the fallback path, but only if no codebase was provided.
@@ -733,23 +737,44 @@ public class NetFrameworkAssemblyResolver
     }
 #endif
 
-    private readonly struct AssemblyLoadRules
+    /// <summary>
+    /// Describes the rules applied when loading some assembly.
+    /// </summary>
+    protected readonly struct AssemblyLoadRules
     {
         private readonly ImmutableList<BindingRedirect>? bindingRedirects;
 
         private readonly ImmutableDictionary<Version, string>? codeBasePaths;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="AssemblyLoadRules"/> struct.
+        /// </summary>
+        /// <param name="bindingRedirects">Any applicable binding redirects.</param>
+        /// <param name="codebasePaths">Any applicable codebase paths.</param>
         internal AssemblyLoadRules(ImmutableList<BindingRedirect>? bindingRedirects, ImmutableDictionary<Version, string>? codebasePaths)
         {
             this.bindingRedirects = bindingRedirects;
             this.codeBasePaths = codebasePaths;
         }
 
-        internal readonly ImmutableList<BindingRedirect> BindingRedirects => this.bindingRedirects ?? ImmutableList<BindingRedirect>.Empty;
+        /// <summary>
+        /// Gets the binding redirects.
+        /// </summary>
+        public readonly ImmutableList<BindingRedirect> BindingRedirects => this.bindingRedirects ?? ImmutableList<BindingRedirect>.Empty;
 
-        internal readonly ImmutableDictionary<Version, string> CodeBasePaths => this.codeBasePaths ?? ImmutableDictionary<Version, string>.Empty;
+        /// <summary>
+        /// Gets the codebase paths.
+        /// </summary>
+        public readonly ImmutableDictionary<Version, string> CodeBasePaths => this.codeBasePaths ?? ImmutableDictionary<Version, string>.Empty;
 
-        internal readonly void TryGetMatch(Version desiredAssemblyVersion, out Version matchingAssemblyVersion, out string? assemblyFile)
+        /// <summary>
+        /// Applies the loading rules to find the actual version and path to an assembly
+        /// given some starting version.
+        /// </summary>
+        /// <param name="desiredAssemblyVersion">The version desired (i.e. the assembly version in the compiled assembly reference.)</param>
+        /// <param name="matchingAssemblyVersion">Receives a copy of <paramref name="desiredAssemblyVersion"/>, or another version as dictated by the <see cref="BindingRedirects"/> rules.</param>
+        /// <param name="assemblyFile">Receives the path to the assembly, if specified by <see cref="CodeBasePaths"/> for the <paramref name="matchingAssemblyVersion"/>.</param>
+        public readonly void TryGetMatch(Version desiredAssemblyVersion, out Version matchingAssemblyVersion, out string? assemblyFile)
         {
             matchingAssemblyVersion = desiredAssemblyVersion;
 
@@ -767,15 +792,30 @@ public class NetFrameworkAssemblyResolver
         }
     }
 
+    /// <summary>
+    /// Represents a binding redirect for versioning, specifying an old version range and a new version.
+    /// </summary>
     [DebuggerDisplay("{" + nameof(DebuggerDisplay) + ",nq}")]
-    private readonly struct BindingRedirect : IEquatable<BindingRedirect>
+    protected readonly struct BindingRedirect : IEquatable<BindingRedirect>
     {
 #if NETSTANDARD2_0 || NETFRAMEWORK
         private static readonly char[] HyphenArray = ['-'];
 #endif
 
-        internal BindingRedirect(string oldVersion, string newVersion)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="BindingRedirect"/> struct.
+        /// </summary>
+        /// <param name="oldVersion">A version range (e.g. "1.0.0.0-2.0.0.0").</param>
+        /// <param name="newVersion">The version to load when a request for any version within the <paramref name="oldVersion"/> range is requested.</param>
+        /// <exception cref="ArgumentNullException">Thrown when arguments are null.</exception>
+        /// <exception cref="ArgumentException">Thrown when the old version is not a valid version range.</exception>
+        public BindingRedirect(string oldVersion, string newVersion)
         {
+            if (oldVersion is null)
+            {
+                throw new ArgumentNullException(nameof(oldVersion));
+            }
+
 #if NETSTANDARD2_0 || NETFRAMEWORK
             string[] oldVersions = oldVersion.Split(HyphenArray);
 #else
@@ -791,40 +831,75 @@ public class NetFrameworkAssemblyResolver
             this.NewVersion = Version.Parse(newVersion);
         }
 
-        internal (Version Start, Version End) OldVersion { get; }
+        /// <summary>
+        /// Gets the version range.
+        /// </summary>
+        public (Version Start, Version End) OldVersion { get; }
 
-        internal Version NewVersion { get; }
+        /// <summary>
+        /// Gets the version to load for any requests within the range specified by <see cref="OldVersion"/>.
+        /// </summary>
+        public Version NewVersion { get; }
 
         private readonly string DebuggerDisplay => $"{this.OldVersion.Start}-{this.OldVersion.End} -> {this.NewVersion}";
 
+        /// <inheritdoc/>
         public readonly bool Equals(BindingRedirect other) => this.OldVersion.Equals(other.OldVersion) && this.NewVersion == other.NewVersion;
 
-        internal readonly bool Contains(Version version) => version >= this.OldVersion.Start && version <= this.OldVersion.End;
+        /// <summary>
+        /// Checks if a specified version falls within the range specified by <see cref="OldVersion"/>.
+        /// </summary>
+        /// <param name="version">An assembly version.</param>
+        /// <returns>A value indicating whether the specified version is within the range.</returns>
+        public readonly bool Contains(Version version) => version >= this.OldVersion.Start && version <= this.OldVersion.End;
     }
 
+    /// <summary>
+    /// Represents a simple assembly name with an optional public key token.
+    /// It notably omits version and culture information.
+    /// </summary>
     [DebuggerDisplay("{" + nameof(Name) + ",nq}")]
-    private readonly struct AssemblySimpleName : IEquatable<AssemblySimpleName>
+    protected readonly struct AssemblySimpleName : IEquatable<AssemblySimpleName>
     {
-        internal AssemblySimpleName(string name, string publicKeyToken)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="AssemblySimpleName"/> struct.
+        /// </summary>
+        /// <param name="name">The name of the assembly.</param>
+        /// <param name="publicKeyToken">The hex encoded public key token, or <see langword="null" /> if the assembly is not strong named.</param>
+        internal AssemblySimpleName(string name, string? publicKeyToken)
         {
             this.Name = name;
             this.PublicKeyToken = publicKeyToken is null ? default : ConvertHexStringToByteArray(publicKeyToken);
         }
 
-        internal AssemblySimpleName(string name, Memory<byte> publicKeyToken)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="AssemblySimpleName"/> struct.
+        /// </summary>
+        /// <param name="name">The name of the assembly.</param>
+        /// <param name="publicKeyToken">The public key token. Empty if the assembly is not strong named.</param>
+        internal AssemblySimpleName(string name, ReadOnlyMemory<byte> publicKeyToken)
         {
             this.Name = name;
             this.PublicKeyToken = publicKeyToken;
         }
 
-        internal string Name { get; }
+        /// <summary>
+        /// Gets the simple name of the assembly.
+        /// </summary>
+        public string Name { get; }
 
-        internal Memory<byte> PublicKeyToken { get; }
+        /// <summary>
+        /// Gets the public key token of the assembly.
+        /// </summary>
+        public ReadOnlyMemory<byte> PublicKeyToken { get; }
 
+        /// <inheritdoc/>
         public readonly override bool Equals(object? obj) => obj is AssemblySimpleName other && this.Equals(other);
 
-        public readonly bool Equals(AssemblySimpleName other) => this.Name == other.Name && Equal(this.PublicKeyToken.Span, other.PublicKeyToken.Span);
+        /// <inheritdoc/>
+        public readonly bool Equals(AssemblySimpleName other) => this.Name == other.Name && this.PublicKeyToken.Span.SequenceEqual(other.PublicKeyToken.Span);
 
+        /// <inheritdoc/>
         public readonly override int GetHashCode() => HashCode.Combine(this.Name, this.PublicKeyToken.Length > 0 ? this.PublicKeyToken.Span[0] : 0);
 
         private static byte[] ConvertHexStringToByteArray(string hex)
