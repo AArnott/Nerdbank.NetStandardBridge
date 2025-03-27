@@ -1,6 +1,25 @@
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.AssemblyLoadRules
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.AssemblyLoadRules.AssemblyLoadRules() -> void
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.AssemblyLoadRules.BindingRedirects.get -> System.Collections.Immutable.ImmutableList<Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.BindingRedirect>!
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.AssemblyLoadRules.CodeBasePaths.get -> System.Collections.Immutable.ImmutableDictionary<System.Version!, string!>!
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.AssemblyLoadRules.TryGetMatch(System.Version! desiredAssemblyVersion, out System.Version! matchingAssemblyVersion, out string? assemblyFile) -> void
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.AssemblySimpleName
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.AssemblySimpleName.AssemblySimpleName() -> void
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.AssemblySimpleName.Equals(Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.AssemblySimpleName other) -> bool
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.AssemblySimpleName.Name.get -> string!
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.AssemblySimpleName.PublicKeyToken.get -> System.ReadOnlyMemory<byte>
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.BaseDir.get -> string!
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.BindingRedirect
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.BindingRedirect.BindingRedirect() -> void
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.BindingRedirect.BindingRedirect(string! oldVersion, string! newVersion) -> void
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.BindingRedirect.Contains(System.Version! version) -> bool
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.BindingRedirect.Equals(Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.BindingRedirect other) -> bool
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.BindingRedirect.NewVersion.get -> System.Version!
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.BindingRedirect.OldVersion.get -> (System.Version! Start, System.Version! End)
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.GetAssemblyNameByPolicy(System.Reflection.AssemblyName! assemblyName) -> System.Reflection.AssemblyName?
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.GetAssemblyNameByPolicy(System.Reflection.AssemblyName! assemblyName, bool validateResult) -> System.Reflection.AssemblyName?
+Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.KnownAssemblies.get -> System.Collections.ObjectModel.ReadOnlyDictionary<Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.AssemblySimpleName, Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.AssemblyLoadRules>!
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.Load(System.Reflection.AssemblyName! assemblyName) -> System.Reflection.Assembly?
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.NetFrameworkAssemblyResolver(string! configFile, string? baseDir = null, System.Diagnostics.TraceSource? traceSource = null) -> void
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.ProbingPaths.get -> System.Collections.Generic.IReadOnlyList<string!>!
@@ -8,6 +27,8 @@ Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.ProvideAssemblyPath(stri
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.TraceEvents
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.TraceEvents.InvalidConfiguration = 0 -> Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.TraceEvents
 Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.TraceSource.get -> System.Diagnostics.TraceSource?
+override Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.AssemblySimpleName.Equals(object? obj) -> bool
+override Nerdbank.NetStandardBridge.NetFrameworkAssemblyResolver.AssemblySimpleName.GetHashCode() -> int
 System.Runtime.InteropServices.ImportedFromTypeLibAttribute (forwarded, contained in netstandard)
 System.Runtime.InteropServices.TypeLibVersionAttribute (forwarded, contained in netstandard)
 System.Runtime.InteropServices.TypeLibVersionAttribute.MajorVersion.get -> int (forwarded, contained in netstandard)
