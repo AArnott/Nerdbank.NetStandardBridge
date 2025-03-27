@@ -4,6 +4,7 @@
 		"config:best-practices",
 		"github>microsoft/vs-renovate-presets:dotnet_packages_below(9)"
 	],
+	"printConfig": true,
 	"labels": ["dependencies"],
 	"packageRules": [
 		{
