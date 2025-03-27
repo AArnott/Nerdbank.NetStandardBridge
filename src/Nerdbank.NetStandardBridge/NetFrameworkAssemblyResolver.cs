@@ -113,7 +113,7 @@ public class NetFrameworkAssemblyResolver
             }
 
             string? publicKeyToken = assemblyIdentity.Attribute("publicKeyToken")?.Value;
-            if (publicKeyToken is null)
+            if (publicKeyToken is null or "null")
             {
                 continue;
             }
