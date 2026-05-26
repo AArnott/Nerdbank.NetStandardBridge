@@ -8,13 +8,15 @@
   <ItemGroup>
     <PackageVersion Include="Microsoft.Bcl.HashCode" Version="6.0.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="3.3.4" />
-    <PackageVersion Include="System.Collections.Immutable" Version="8.0.0" />
+    <PackageVersion Include="System.Collections.Immutable" Version="9.0.0" />
     <PackageVersion Include="System.Memory" Version="4.6.2" />
     <PackageVersion Include="System.ValueTuple" Version="4.6.1" />
     <PackageVersion Include="Validation" Version="2.6.68" />
   </ItemGroup>
   <ItemGroup Label="Library.Template">
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
+    <PackageVersion Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.8" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.5.1" />
+    <PackageVersion Include="System.Threading.Tasks.Extensions" Version="4.6.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageVersion Include="xunit" Version="2.9.3" />
   </ItemGroup>
@@ -24,8 +26,9 @@
   <ItemGroup Label="Library.Template">
     <GlobalPackageReference Include="CSharpIsNullAnalyzer" Version="0.1.593" />
     <GlobalPackageReference Include="DotNetAnalyzers.DocumentationAnalyzers" Version="1.0.0-beta.59" />
-    <GlobalPackageReference Include="Nerdbank.GitVersioning" Version="3.7.115" />
-    <GlobalPackageReference Include="PolySharp" Version="1.15.0" />
+    <!-- The condition works around https://github.com/dotnet/sdk/issues/44951 -->
+    <GlobalPackageReference Include="Nerdbank.GitVersioning" Version="3.9.50" Condition="!('$(TF_BUILD)'=='true' and '$(dotnetformat)'=='true')" />
+    <GlobalPackageReference Include="PolySharp" Version="1.16.0" />
     <GlobalPackageReference Include="StyleCop.Analyzers.Unstable" Version="1.2.0.556" />
   </ItemGroup>
 </Project>

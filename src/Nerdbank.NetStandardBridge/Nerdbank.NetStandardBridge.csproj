@@ -4,6 +4,7 @@
     <TargetFrameworks>netstandard2.0;netstandard2.1;net462;net8.0</TargetFrameworks>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <Description>A reference + facade library to bring additional types to .NET Standard.</Description>
+    <PackageValidationBaselineVersion>1.1.46</PackageValidationBaselineVersion>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net462'">

@@ -11,8 +11,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Condition="'$(TargetFrameworkIdentifier)' == '.NETFramework'" />
     <PackageReference Include="Validation" ExcludeAssets="compile;runtime" GeneratePathProperty="true" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="System.Threading.Tasks.Extensions" Condition="'$(TargetFrameworkIdentifier)' == '.NETFramework'" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="xunit" />
   </ItemGroup>
