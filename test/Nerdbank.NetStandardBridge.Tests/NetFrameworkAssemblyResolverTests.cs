@@ -208,7 +208,7 @@ public class NetFrameworkAssemblyResolverTests
     public void Load()
     {
 #if NETFRAMEWORK
-        AppDomain appDomain = AppDomain.CreateDomain("test");
+        AppDomain appDomain = CreateTestAppDomain();
         try
         {
             var helper = (AppDomainHelper)appDomain.CreateInstanceFromAndUnwrap(this.GetType().Assembly.CodeBase, typeof(AppDomainHelper).FullName);
@@ -231,7 +231,7 @@ public class NetFrameworkAssemblyResolverTests
     public void HookupResolver()
     {
 #if NETFRAMEWORK
-        AppDomain appDomain = AppDomain.CreateDomain("test");
+        AppDomain appDomain = CreateTestAppDomain();
         try
         {
             var helper = (AppDomainHelper)appDomain.CreateInstanceFromAndUnwrap(this.GetType().Assembly.CodeBase, typeof(AppDomainHelper).FullName);
@@ -267,6 +267,21 @@ public class NetFrameworkAssemblyResolverTests
         this.loader.ProvideAssemblyPath(Path.Combine(Environment.CurrentDirectory, "nonexistent.dll"));
         this.loader.ProvideAssemblyPath(Path.Combine(Environment.CurrentDirectory, "nonexistent.dll"));
     }
+
+#if NETFRAMEWORK
+    private static AppDomain CreateTestAppDomain()
+    {
+        string testAssemblyPath = Assembly.GetExecutingAssembly().Location;
+        string testBinDir = Path.GetDirectoryName(testAssemblyPath)!;
+        var setup = new AppDomainSetup
+        {
+            ApplicationBase = testBinDir,
+            ConfigurationFile = testAssemblyPath + ".config",
+        };
+
+        return AppDomain.CreateDomain("test", null, setup);
+    }
+#endif
 
 #if NETFRAMEWORK
     private class AppDomainHelper : MarshalByRefObject
