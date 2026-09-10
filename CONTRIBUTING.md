@@ -37,7 +37,11 @@ to the feeds that packages for this repo come from, if any.
 
 Building, testing, and packing this repository can be done by using the standard dotnet CLI commands (e.g. `dotnet build`, `dotnet test`, `dotnet pack`, etc.).
 
-[pwsh]: https://learn.microsoft.com/powershell/scripting/install/installing-powershell
+## Testing
+
+You can use `dotnet test` to build and/or test the repo.
+
+There may be tests that are known to be unstable or have special requirements. These can be avoided by running tests using the [dotnet-test-cloud.ps1](tools/dotnet-test-cloud.ps1) script *after* running `dotnet build`.
 
 ## Releases
 
@@ -54,8 +58,11 @@ Having previously used `nbgv tag` and pushing the tag will help you identify the
 After publishing the release, the `.github/workflows/release.yml` workflow will be automatically triggered, which will:
 
 1. Find the most recent `.github/workflows/build.yml` GitHub workflow run of the tagged release.
-1. Upload the `deployables` artifact from that workflow run to your GitHub Release.
-1. If you have `NUGET_API_KEY` defined as a secret variable for your repo or org, any nuget packages in the `deployables` artifact will be pushed to nuget.org.
+1. Upload the `deployables-Linux` artifact from that workflow run to your GitHub Release.
+1. Any nuget packages in the `deployables-Linux` artifact will be pushed to nuget.org.
+
+The workflow is written to leverage NuGet.org Trusted Publishing.
+You should set `NUGET_USER` as a repo secret to satisfy Trusted Publishing requirements.
 
 ### Azure Pipelines
 
@@ -94,3 +101,5 @@ git checkout origin/main
 # resolve any conflicts, then commit the merge commit.
 git push origin -u HEAD
 ```
+
+[pwsh]: https://learn.microsoft.com/powershell/scripting/install/installing-powershell
