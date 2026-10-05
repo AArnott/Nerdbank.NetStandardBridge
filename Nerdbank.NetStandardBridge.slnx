@@ -18,5 +18,4 @@
   <Folder Name="/test/">
     <Project Path="test/Nerdbank.NetStandardBridge.Tests/Nerdbank.NetStandardBridge.Tests.csproj" />
   </Folder>
-  <Project Path="test/AotCompatibilityTest/AotCompatibilityTest.csproj" />
 </Solution>
