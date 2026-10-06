@@ -3,14 +3,16 @@
 
 using System.Reflection;
 using System.Runtime.InteropServices;
+using TUnit;
+using Xunit;
 
 public class AttributesTests
 {
 #if NETCOREAPP3_1_OR_GREATER
-    [Theory]
-    [InlineData(typeof(TypeLibVersionAttribute))]
-    [InlineData(typeof(ImportedFromTypeLibAttribute))]
-    [Trait("Category", "SkipWhenLiveUnitTesting")] // fails because forwarded types aren't compiled in, I guess
+    [Test]
+    [Arguments(typeof(TypeLibVersionAttribute))]
+    [Arguments(typeof(ImportedFromTypeLibAttribute))]
+    [Property("Category", "SkipWhenLiveUnitTesting")] // fails because forwarded types aren't compiled in, I guess
     public void TypeForwardersInPlace(Type type)
     {
         Assembly lib = Assembly.Load($"Nerdbank.NetStandardBridge");

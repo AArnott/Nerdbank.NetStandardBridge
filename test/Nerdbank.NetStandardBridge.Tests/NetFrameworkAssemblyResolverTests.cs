@@ -12,6 +12,8 @@ using System.Runtime.InteropServices;
 using System.Runtime.Loader;
 #endif
 using Nerdbank.NetStandardBridge;
+using TUnit;
+using Xunit;
 
 public class NetFrameworkAssemblyResolverTests
 {
@@ -29,25 +31,25 @@ public class NetFrameworkAssemblyResolverTests
 
     private static AssemblyName NonExistingAssemblyName => new($"NonExisting, Version=2.5.0.0, Culture=neutral, PublicKeyToken=2fc06f0d701809a7");
 
-    [Fact]
+    [Test]
     public void Ctor_ValidatesInputs()
     {
         Assert.Throws<ArgumentException>("configFile", () => new NetFrameworkAssemblyResolver(null!));
     }
 
-    [Fact]
+    [Test]
     public void BaseDir()
     {
         Assert.Equal(TestBaseDir, this.loader.BaseDir);
     }
 
-    [Fact]
+    [Test]
     public void ProbingPathsAreNotEmpty()
     {
         Assert.NotEmpty(this.loader.ProbingPaths);
     }
 
-    [Fact]
+    [Test]
     public void ProbingPathsAreRelative()
     {
 #if NETFRAMEWORK
@@ -57,19 +59,19 @@ public class NetFrameworkAssemblyResolverTests
 #endif
     }
 
-    [Fact]
+    [Test]
     public void GetAssemblyPath_NullInput()
     {
         Assert.Throws<ArgumentNullException>(() => this.loader.GetAssemblyNameByPolicy(null!));
     }
 
-    [Fact]
+    [Test]
     public void GetAssemblyPath_NullName()
     {
         Assert.Null(this.loader.GetAssemblyNameByPolicy(new AssemblyName()));
     }
 
-    [Fact]
+    [Test]
     public void Codebase_NoRedirect()
     {
         this.loader.GetAssemblyNameMock = path => new AssemblyName("NuGet.VisualStudio.Common, Version=5.6.0.2, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a");
@@ -77,7 +79,7 @@ public class NetFrameworkAssemblyResolverTests
         Assert.Equal(Path.Combine(TestBaseDir, @"commonextensions\microsoft\nuget\NuGet.VisualStudio.Common.dll"), redirectedAssemblyName?.CodeBase);
     }
 
-    [Fact]
+    [Test]
     public void Codebase_AbsolutePath()
     {
         string simpleAssemblyName = $"Microsoft.VisualStudio.Editor.{(RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "Windows" : "NonWindows")}";
@@ -90,7 +92,7 @@ public class NetFrameworkAssemblyResolverTests
         Assert.Equal(expected, redirectedAssemblyName?.CodeBase);
     }
 
-    [Fact]
+    [Test]
     public void BindingRedirect_BelowSlide()
     {
         this.loader.FileExistsMock = this.loader.FileExistsDenySearch;
@@ -99,7 +101,7 @@ public class NetFrameworkAssemblyResolverTests
         Assert.Null(redirectedAssemblyName!.CodeBase);
     }
 
-    [Fact]
+    [Test]
     public void BindingRedirect_AboveSlide()
     {
         this.loader.FileExistsMock = this.loader.FileExistsDenySearch;
@@ -108,7 +110,7 @@ public class NetFrameworkAssemblyResolverTests
         Assert.Null(redirectedAssemblyName!.CodeBase);
     }
 
-    [Fact]
+    [Test]
     public void BindingRedirect_BetweenSlides()
     {
         this.loader.FileExistsMock = this.loader.FileExistsDenySearch;
@@ -117,7 +119,7 @@ public class NetFrameworkAssemblyResolverTests
         Assert.Null(redirectedAssemblyName!.CodeBase);
     }
 
-    [Fact]
+    [Test]
     public void BindingRedirect_SingleSlide()
     {
         var expectedAssemblyName = new AssemblyName("Microsoft.CodeAnalysis.ExternalAccess.Razor, Version=3.6.0.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35");
@@ -127,7 +129,7 @@ public class NetFrameworkAssemblyResolverTests
         Assert.Equal(Path.Combine(TestBaseDir, @"commonextensions\microsoft\managedlanguages\vbcsharp\languageservices\Microsoft.CodeAnalysis.ExternalAccess.Razor.dll"), redirectedAssemblyName?.CodeBase);
     }
 
-    [Fact]
+    [Test]
     public void BindingRedirect_DoubleSlide()
     {
         string v3Path = Path.Combine(TestBaseDir, @"PrivateAssemblies\Microsoft.IdentityModel.Clients.ActiveDirectory.dll");
@@ -144,14 +146,14 @@ public class NetFrameworkAssemblyResolverTests
         Assert.Equal(v5Path, redirectedAssemblyName?.CodeBase);
     }
 
-    [Fact]
+    [Test]
     public void NoMatch_NotStrongNamed()
     {
         this.loader.FileExistsMock = path => false;
         Assert.Null(this.loader.GetAssemblyNameByPolicy(new AssemblyName("NonExistentSimpleName")));
     }
 
-    [Fact]
+    [Test]
     public void NoMatch_StrongNamed()
     {
         this.loader.FileExistsMock = path => false;
@@ -160,7 +162,7 @@ public class NetFrameworkAssemblyResolverTests
         Assert.Null(redirectedAssemblyName!.CodeBase);
     }
 
-    [Fact]
+    [Test]
     public void SearchForDll_BaseDir()
     {
         string madeUpName = "someassembly";
@@ -175,7 +177,7 @@ public class NetFrameworkAssemblyResolverTests
         Assert.Equal(expectedPath, this.loader.GetAssemblyNameByPolicy(assemblyName)?.CodeBase);
     }
 
-    [Fact]
+    [Test]
     public void SearchForDll_ProbingPath()
     {
         string madeUpName = "someassembly";
@@ -186,7 +188,7 @@ public class NetFrameworkAssemblyResolverTests
         Assert.Equal(expectedPath, this.loader.GetAssemblyNameByPolicy(assemblyName)?.CodeBase);
     }
 
-    [Fact]
+    [Test]
     public void SearchForDll_ProbingPath_MismatchVersion()
     {
         string madeUpName = "someassembly";
@@ -197,14 +199,14 @@ public class NetFrameworkAssemblyResolverTests
         Assert.Throws<InvalidOperationException>(() => this.loader.GetAssemblyNameByPolicy(assemblyName));
     }
 
-    [Fact]
+    [Test]
     public void FileExists_DefaultImpl()
     {
         Assert.True(this.loader.BaseFileExists(Assembly.GetExecutingAssembly().Location));
         Assert.False(this.loader.BaseFileExists(Assembly.GetExecutingAssembly().Location + ".notexist"));
     }
 
-    [Fact]
+    [Test]
     public void Load()
     {
 #if NETFRAMEWORK
@@ -227,7 +229,7 @@ public class NetFrameworkAssemblyResolverTests
 #endif
     }
 
-    [Fact]
+    [Test]
     public void HookupResolver()
     {
 #if NETFRAMEWORK
@@ -252,7 +254,7 @@ public class NetFrameworkAssemblyResolverTests
 #endif
     }
 
-    [Fact]
+    [Test]
     public void ProvideAssemblyPath_NoThrowOnNonExistentPath()
     {
         this.loader.ProvideAssemblyPath("no good path");
@@ -260,7 +262,7 @@ public class NetFrameworkAssemblyResolverTests
         Assert.Null(this.loader.Load(new AssemblyName("nonexistent")));
     }
 
-    [Fact]
+    [Test]
     public void ProvideAssemblyPath_PathMultipleTimes()
     {
         this.loader.ProvideAssemblyPath("no good path");
