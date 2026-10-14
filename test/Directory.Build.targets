@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project>
+  <PropertyGroup>
+    <!-- Preserve the app host for managed tests.
+         This lives here rather than in Directory.Build.props so that a RuntimeIdentifier set in the project file itself is seen. -->
+    <UseAppHost Condition="'$(RuntimeIdentifier)' == '' and '$(NativeAOT)' != 'true'">true</UseAppHost>
+  </PropertyGroup>
+
   <Import Project="AOT.props"
           Condition="'$(IsTestProject)' == 'true' and '$(PublishNativeAOTTests)' == 'true' and '$(TargetFramework)' != '' and $([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net8.0'))" />
 
