@@ -709,9 +709,9 @@ public class NetFrameworkAssemblyResolver
             foreach (string extension in AssemblyExtensions)
             {
                 string filename = $"{assemblyName.Name}{extension}";
-                string codebase = assemblyName.CultureName is null ?
-                    Path.Combine(requestingContext.DependencySearchPath, filename) :
-                    Path.Combine(requestingContext.DependencySearchPath, assemblyName.CultureName, filename);
+                string codebase = assemblyName.CultureName is null
+                    ? Path.Combine(requestingContext.DependencySearchPath, filename)
+                    : Path.Combine(requestingContext.DependencySearchPath, assemblyName.CultureName, filename);
                 if (this.FileExists(codebase))
                 {
                     try
