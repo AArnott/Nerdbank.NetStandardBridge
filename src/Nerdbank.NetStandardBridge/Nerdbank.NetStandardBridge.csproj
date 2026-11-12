@@ -1,12 +1,17 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>netstandard2.0;netstandard2.1;net462;net8.0</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0;netstandard2.1;net462;net10.0</TargetFrameworks>
     <IsAotCompatible>false</IsAotCompatible>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <Description>A reference + facade library to bring additional types to .NET Standard.</Description>
     <PackageValidationBaselineVersion>1.1.46</PackageValidationBaselineVersion>
   </PropertyGroup>
+
+  <!-- net8.0 was replaced by net10.0. Without this, baseline validation compares the old net8.0 asset to netstandard2.1. -->
+  <ItemGroup>
+    <PackageValidationBaselineFrameworkToIgnore Include="net8.0" />
+  </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net462'">
     <PackageReference Include="Microsoft.Bcl.HashCode" />
